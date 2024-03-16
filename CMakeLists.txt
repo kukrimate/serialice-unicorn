@@ -1,6 +1,7 @@
 cmake_minimum_required(VERSION 3.1)
 
-# Unicorn Engine
+# Unicorn Engine (only build x86)
+set(UNICORN_ARCH "x86" CACHE STRING "Unicorn architecture")
 add_subdirectory(unicorn)
 
 # liblua-5.3
