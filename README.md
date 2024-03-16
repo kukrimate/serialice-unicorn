@@ -5,13 +5,13 @@ SerialICE implementation using Unicorn Engine.
 ## Usage
 
 ```
-Usage: serialice-unicorn OPTIONS
+Usage: ./serialice-unicorn OPTIONS
 
 Options:
+  -c, --cpu [CPU_TYPE]            CPU type
   -f, --firmware [FIRMWARE_PATH]  Firmware binary
   -S, --simba [SIMBA_PATH]        Simba script
   -s, --serial [SERIAL_PATH]      Serial port
-  -l, --lua                       Lua shell
   -h, --help                      Show help
 ```
 

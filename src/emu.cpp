@@ -1,5 +1,5 @@
 /*
- * serialice-com.cpp: Emulator
+ * emu.cpp: Emulator
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
@@ -9,7 +9,9 @@
 
 #include <unicorn/unicorn.h>
 
-#include "serialice.h"
+#include "com.h"
+#include "emu.h"
+#include "filter.h"
 
 class UcException : public std::exception {
 private:
@@ -31,9 +33,6 @@ public:
 			throw UcException(err); \
 	} while (false)
 
-Target *g_target;
-Filter *g_filter;
-
 uint32_t Emulator::hook_io_read(uc_engine *uc, uint32_t port, int size, void *user_data)
 {
 	return static_cast<Emulator *>(user_data)->handle_io_read(port, size);
@@ -41,30 +40,19 @@ uint32_t Emulator::hook_io_read(uc_engine *uc, uint32_t port, int size, void *us
 
 void Emulator::hook_io_write(uc_engine *uc, uint32_t port, int size, uint32_t value, void *user_data)
 {
-
 	static_cast<Emulator *>(user_data)->handle_io_write(port, size, value);
 }
 
-
-uint64_t Emulator::hook_mem_read_0(uc_engine *uc, uint64_t offset, unsigned size, void *user_data)
+bool Emulator::hook_mem_read(uc_engine *uc, int type, uint64_t address, int size, int64_t value, void *user_data, uint64_t *result)
 {
-	std::cout << "fuck" << std::endl;
-	return static_cast<Emulator *>(user_data)->handle_mem_read(offset, size);
+	*result = static_cast<Emulator *>(user_data)->handle_mem_read(address, size);
+	return true; // We have Handled the read
 }
 
-void Emulator::hook_mem_write_0(uc_engine *uc, uint64_t offset, unsigned size, uint64_t value, void *user_data)
+bool Emulator::hook_mem_write(uc_engine *uc, int type, uint64_t address, int size, int64_t value, void *user_data)
 {
-	static_cast<Emulator *>(user_data)->handle_mem_write(offset, size, value);
-}
-
-uint64_t Emulator::hook_mem_read_1m(uc_engine *uc, uint64_t offset, unsigned size, void *user_data)
-{
-	return static_cast<Emulator *>(user_data)->handle_mem_read(1 * MiB + offset, size);
-}
-
-void Emulator::hook_mem_write_1m(uc_engine *uc, uint64_t offset, unsigned size, uint64_t value, void *user_data)
-{
-	static_cast<Emulator *>(user_data)->handle_mem_write(1 * MiB + offset, size, value);
+	static_cast<Emulator *>(user_data)->handle_mem_write(address, size, value);
+	return true; // Handled have the write
 }
 
 bool Emulator::hook_rdmsr(uc_engine *uc, void *user_data)
@@ -82,68 +70,167 @@ bool Emulator::hook_cpuid(uc_engine *uc, void *user_data)
 	return static_cast<Emulator *>(user_data)->handle_cpuid();
 }
 
-void Emulator::hook_und(uc_engine *uc)
-{
-	uint32_t cs, eip;
-
-	UC_DO(uc_reg_read(uc, UC_X86_REG_CS, &cs));
-	UC_DO(uc_reg_read(uc, UC_X86_REG_EIP, &eip));
-
-	std::cout << "Invalid insn at " << std::hex << cs << ":" << eip << std::dec << std::endl;
-}
-
-
-bool Emulator::hook_unmap(uc_engine *uc, int type,
-                                 uint64_t address, int size, int64_t value,
-                                 void *user_data)
-{
-	uint32_t cs, eip;
-
-	UC_DO(uc_reg_read(uc, UC_X86_REG_CS, &cs));
-	UC_DO(uc_reg_read(uc, UC_X86_REG_EIP, &eip));
-
-	std::cout << std::hex << cs << ":" << eip << ": unmapped access " << address << std::dec << std::endl;
-	return false;
-}
-
-bool Emulator::hook_prot(uc_engine *uc, int type,
-                                 uint64_t address, int size, int64_t value,
-                                 void *user_data)
-{
-	uint32_t cs, eip;
-
-	UC_DO(uc_reg_read(uc, UC_X86_REG_CS, &cs));
-	UC_DO(uc_reg_read(uc, UC_X86_REG_EIP, &eip));
-
-	std::cout << std::hex << cs << ":" << eip << ": prot access " << address << std::dec << std::endl;
-	return false;
-}
-
-
 static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {}
 
-Emulator::Emulator()
+#define mask_data(val,bytes) (val & (((uint64_t)1<<(bytes*8))-1))
+
+uint32_t Emulator::handle_io_read(uint32_t port, int size)
+{
+	uint64_t value = 0;
+	int mux = m_filter.io_read_pre(*this, port, size);
+
+	if (mux & READ_FROM_SERIALICE)
+		value = m_target.io_read(port, size);
+	if (mux & READ_FROM_QEMU) // FIXME
+		;
+
+	value = mask_data(value, size);
+	m_filter.io_read_post(*this, &value);
+	return value;
+}
+
+void Emulator::handle_io_write(uint32_t port, int size, uint32_t value)
+{
+	value = mask_data(value, size);
+	uint64_t v64 = value;
+	int mux = m_filter.io_write_pre(*this, &v64, port, size);
+	value = v64;
+	value = mask_data(value, size);
+
+	if (mux & WRITE_TO_SERIALICE)
+		m_target.io_write(port, size, value);
+	if (mux & WRITE_TO_QEMU) // FIXME
+		;
+
+	m_filter.io_write_post(*this);
+}
+
+uint64_t Emulator::handle_mem_read(uint64_t addr, int size)
+{
+	uint64_t data = 0;
+
+	int mux = m_filter.load_pre(*this, addr, size);
+
+	if (mux & READ_FROM_SERIALICE)
+		data = m_target.load(addr, size);
+	if (mux & READ_FROM_QEMU) // FIXME
+		;
+
+	m_filter.load_post(*this, &data);
+
+	return data;
+}
+
+void Emulator::handle_mem_write(uint64_t addr, int size, uint64_t value)
+{
+	int mux = m_filter.store_pre(*this, addr, size, &value);
+
+	if (mux & WRITE_TO_SERIALICE)
+		m_target.store(addr, size, value);
+	if (mux & WRITE_TO_QEMU) // FIXME
+		;
+
+	m_filter.store_post(*this);
+}
+
+bool Emulator::handle_rdmsr()
+{
+	uint32_t addr;
+	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &addr));
+
+	int mux = m_filter.rdmsr_pre(*this, addr);
+
+	if (mux & READ_FROM_SERIALICE) {
+		// Get RDMSR result from target
+		uint32_t hi = 0, lo = 0;
+		m_target.rdmsr(addr, /*key=*/0, &hi, &lo);
+
+		// Call post hook
+		m_filter.rdmsr_post(*this, &hi, &lo);
+
+		// Inject result into VM
+		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EDX, (void *) &hi));
+		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EAX, (void *) &lo));
+
+		// Indicate we overrode RDMSR
+		return true;
+	}
+
+	// Tell unicorn to execute RDMSR if requested
+	// FIXME: we cannot call post hook here
+	return !(mux & READ_FROM_QEMU);
+}
+
+bool Emulator::handle_wrmsr()
+{
+	uint32_t addr, hi, lo;
+	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &addr));
+	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EDX, (void *) &hi));
+	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EAX, (void *) &lo));
+
+	int mux = m_filter.wrmsr_pre(*this, addr, &hi, &lo);
+
+	// Execute WRMSR on target if requested
+	if (mux & WRITE_TO_SERIALICE)
+		m_target.wrmsr(addr, /*key=*/0, hi, lo);
+
+	// Call post hook
+	m_filter.wrmsr_post(*this);
+
+	// Execute WRMSR in VM if requested
+	return !(mux & WRITE_TO_QEMU);
+}
+
+bool Emulator::handle_cpuid()
+{
+	uint32_t eax, ecx;
+	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EAX, (void *) &eax));
+	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &ecx));
+
+	int mux = m_filter.cpuid_pre(*this, eax, ecx);
+
+	if (mux & READ_FROM_SERIALICE) {
+		// Get CPUID result from target
+		CpuidRegs regs = m_target.cpuid(eax, ecx);
+
+		// Call post hook
+		m_filter.cpuid_post(*this, regs);
+
+		// Inject result into VM
+		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EAX, (void *) &regs.eax));
+		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EBX, (void *) &regs.ebx));
+		UC_DO(uc_reg_write(m_uc, UC_X86_REG_ECX, (void *) &regs.ecx));
+		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EDX, (void *) &regs.edx));
+
+		// Indicate that we overrode CPUID
+		return true;
+	}
+
+	// Tell unicorn to execute CPUID if requested
+	// FIXME: we cannot call post hook here
+	return !(mux & READ_FROM_QEMU);
+}
+
+
+Emulator::Emulator(int cpu_type, Target &target, Filter &filter)
+	: m_target(target)
+	, m_filter(filter)
 {
 	uc_hook hh;
 	// Create unicorn handle
 	UC_DO(uc_open(UC_ARCH_X86, UC_MODE_16, &m_uc));
-	// Make it Skylake
-	UC_DO(uc_ctl(m_uc, UC_CTL_CPU_MODEL, UC_CPU_X86_SKYLAKE_CLIENT));
+	// Set CPU type
+	UC_DO(uc_ctl(m_uc, UC_CTL_CPU_MODEL, static_cast<uc_cpu_x86>(cpu_type)));
 	// Install hooks
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_io_read), this, 0, 0xffffffff, UC_X86_INS_IN));
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_io_write), this, 0, 0xffffffff, UC_X86_INS_OUT));
-
-	// UC_DO(uc_mmio_map(m_uc, 0, 1 * MiB - 128 * KiB, hook_mem_read_0, this, hook_mem_write_0, this));
-	UC_DO(uc_mmio_map(m_uc, 1 * MiB, 0xfef00000 - 1 * MiB, hook_mem_read_1m, this, hook_mem_write_1m, this));
-
+	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_MEM_READ_UNMAPPED, reinterpret_cast<void *>(hook_mem_read), this, 0, 0xffffffff));
+	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_MEM_WRITE_UNMAPPED, reinterpret_cast<void *>(hook_mem_write), this, 0, 0xffffffff));
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_rdmsr), this, 0, 0xffffffff, UC_X86_INS_RDMSR));
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_wrmsr), this, 0, 0xffffffff, UC_X86_INS_WRMSR));
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_cpuid), this, 0, 0xffffffff, UC_X86_INS_CPUID));
-
-	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN_INVALID, reinterpret_cast<void *>(hook_und), this, 0, 0xffffffff));
-	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_MEM_UNMAPPED, reinterpret_cast<void *>(hook_unmap), this, 0, 0xffffffff));
-	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_MEM_PROT, reinterpret_cast<void *>(hook_prot), this, 0, 0xffffffff));
-
+	// We need to trace every instruction to accurately track the guest the instruction pointer.
+	// This shouldn't cause any real performance issues as serial communication is by far our biggest bottleneck.
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_CODE, reinterpret_cast<void *>(hook_code), this, 0, 0xffffffff));
 }
 
@@ -167,167 +254,41 @@ void Emulator::unmap(uint64_t addr, size_t size)
 	UC_DO(uc_mem_unmap(m_uc, addr, size));
 }
 
+static uc_x86_reg reg2uc(Register reg)
+{
+	switch (reg) {
+	case EAX: return UC_X86_REG_EAX;
+	case ECX: return UC_X86_REG_ECX;
+	case EDX: return UC_X86_REG_EDX;
+	case EBX: return UC_X86_REG_EBX;
+	case ESP: return UC_X86_REG_ESP;
+	case EBP: return UC_X86_REG_EBP;
+	case ESI: return UC_X86_REG_ESI;
+	case EDI: return UC_X86_REG_EDI;
+	case EIP: return UC_X86_REG_EIP;
+	case CS: return UC_X86_REG_CS;
+	default: abort();
+	}
+}
+
+uint32_t Emulator::read_register(Register reg)
+{
+	uint32_t val;
+	UC_DO(uc_reg_read(m_uc, reg2uc(reg), &val));
+	if (reg == CS)
+		val &= 0xffff;
+	return val;
+}
+
+void Emulator::write_register(Register reg, uint32_t val)
+{
+	UC_DO(uc_reg_write(m_uc, reg2uc(reg), &val));
+}
+
 void Emulator::start()
 {
+	// Start emulation at X86 reset vector
+	// NOTE: We only set IP=0xfff0, hidden base of CS is set to 0xffff0000
+	// by patching Unicorn Engine to always use the standard X86 reset vector
 	UC_DO(uc_emu_start(m_uc, 0xfff0, 0, 0, 0));
-}
-
-#define mask_data(val,bytes) (val & (((uint64_t)1<<(bytes*8))-1))
-
-uint32_t Emulator::handle_io_read(uint32_t port, int size)
-{
-	uint64_t value = 0;
-	int mux = g_filter->io_read_pre(port, size);
-
-	// NOTE: unicorn doesnt give us any I/O devices
-	if (mux & READ_FROM_QEMU)
-		value = 0xff;
-	if (mux & READ_FROM_SERIALICE)
-		value = g_target->io_read(port, size);
-
-	value = mask_data(value, size);
-	g_filter->io_read_post(&value);
-	return value;
-}
-
-void Emulator::handle_io_write(uint32_t port, int size, uint32_t value)
-{
-	value = mask_data(value, size);
-	uint64_t v64 = value;
-	int mux = g_filter->io_write_pre(&v64, port, size);
-	value = v64;
-	value = mask_data(value, size);
-
-	// NOTE: unicorn doesnt give us any I/O devices
-	if (mux & WRITE_TO_QEMU)
-		;
-	if (mux & WRITE_TO_SERIALICE)
-		g_target->io_write(port, size, value);
-
-	g_filter->io_write_post();
-}
-
-uint64_t Emulator::handle_mem_read(uint64_t addr, int size)
-{
-	uint64_t data = 0;
-
-	int mux = g_filter->load_pre(addr, size);
-
-	if (mux & READ_FROM_SERIALICE)
-		data = g_target->load(addr, size);
-	if (mux & READ_FROM_QEMU)	// No real way for us to do that
-		abort();
-
-	g_filter->load_post(&data);
-
-	return data;
-}
-
-void Emulator::handle_mem_write(uint64_t addr, int size, uint64_t value)
-{
-	int mux = g_filter->store_pre(addr, size, &value);
-
-	if (mux & WRITE_TO_SERIALICE)
-		g_target->store(addr, size, value);
-	if (mux & WRITE_TO_QEMU)	// No real way for us to do that
-		abort();
-
-	g_filter->store_post();
-}
-
-bool Emulator::handle_rdmsr()
-{
-	uint32_t addr;
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &addr));
-
-	int mux = g_filter->rdmsr_pre(addr);
-
-	if (mux & READ_FROM_SERIALICE) {
-		// Get rdmsr result from target
-		uint32_t hi = 0, lo = 0;
-		g_target->rdmsr(addr, /*key=*/0, &hi, &lo);
-
-		// Call post hook
-		g_filter->rdmsr_post(&hi, &lo);
-
-		// Write to vm
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EDX, (void *) &hi));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EAX, (void *) &lo));
-
-		// Indicate we overrode rdmsr
-		return true;
-	}
-
-	if (!(mux & READ_FROM_QEMU))	// FIXME: this must be the case now
-		abort();
-
-	// FIXME: we cannot call post hook here
-	// g_filter->rdmsr_post(&hi, &lo);
-
-	// Tell unicorn to execute rdmsr
-	return false;
-}
-
-bool Emulator::handle_wrmsr()
-{
-	uint32_t addr, hi, lo;
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &addr));
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EDX, (void *) &hi));
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EAX, (void *) &lo));
-
-	int mux = g_filter->wrmsr_pre(addr, &hi, &lo);
-
-	if (mux & WRITE_TO_SERIALICE) {
-		// Run wrmsr on target
-		g_target->wrmsr(addr, /*key=*/0, hi, lo);
-
-		// Call post hook
-		g_filter->wrmsr_post();
-
-		// Indicate we overrode wrmsr
-		return true;
-	}
-
-	// FIXME: we cannot call post hook here
-	// g_filter->wrmsr_post();
-
-	// Execute wrmsr if mux & WRITE_TO_QEMU
-	return !(mux & WRITE_TO_QEMU);
-}
-
-bool Emulator::handle_cpuid()
-{
-	uint32_t eax, ecx;
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EAX, (void *) &eax));
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &ecx));
-
-	int mux = g_filter->cpuid_pre(eax, ecx);
-
-	if (mux & READ_FROM_SERIALICE) {
-		// Get cpuid from target
-		cpuid_regs_t regs;
-		g_target->cpuid(eax, ecx, &regs);
-
-		// Call post hook
-		g_filter->cpuid_post(&regs);
-
-		// Write to vm
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EAX, (void *) &regs.eax));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EBX, (void *) &regs.ebx));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_ECX, (void *) &regs.ecx));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EDX, (void *) &regs.edx));
-
-		// Indicate that we overrode cpuid
-		return true;
-	}
-
-	if (!(mux & READ_FROM_QEMU))	// FIXME: this must be the case now
-		abort();
-
-	// FIXME: we cannot call post hook here
-	// g_filter->cpuid_post(&ret);
-
-	// Tell unicorn to execute CPUID
-	return false;
-
 }

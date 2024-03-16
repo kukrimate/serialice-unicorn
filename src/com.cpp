@@ -1,10 +1,9 @@
 /*
- * serialice-com.cpp: Target communication
+ * com.cpp: Target communication
  *
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-/* System includes */
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
@@ -13,9 +12,10 @@
 #include <termios.h>
 #include <unistd.h>
 
-#include "serialice.h"
+#include "com.h"
+#include "emu.h"
 
-#define BUFFER_SIZE 1024
+static const size_t BUFFER_SIZE = 1024;
 
 // **************************************************************************
 // low level communication with the SerialICE shell (serial communication)
@@ -339,7 +339,7 @@ void Target::wrmsr(uint32_t addr, uint32_t key, uint32_t hi, uint32_t lo)
 	serialice_command(m_command, 0);
 }
 
-void Target::cpuid(uint32_t eax, uint32_t ecx, cpuid_regs_t * ret)
+CpuidRegs Target::cpuid(uint32_t eax, uint32_t ecx)
 {
 	sprintf(m_command, "*ci%08x.%08x", eax, ecx);
 	// command read back: "\n000006f2.00000000.00001234.12340324"
@@ -348,8 +348,10 @@ void Target::cpuid(uint32_t eax, uint32_t ecx, cpuid_regs_t * ret)
 	m_buffer[9] = 0;           // . -> \0
 	m_buffer[18] = 0;          // . -> \0
 	m_buffer[27] = 0;          // . -> \0
-	ret->eax = (uint32_t) strtoul(m_buffer + 1, (char **)NULL, 16);
-	ret->ebx = (uint32_t) strtoul(m_buffer + 10, (char **)NULL, 16);
-	ret->ecx = (uint32_t) strtoul(m_buffer + 19, (char **)NULL, 16);
-	ret->edx = (uint32_t) strtoul(m_buffer + 28, (char **)NULL, 16);
+	return {
+		static_cast<uint32_t>(strtoul(m_buffer + 1, (char **)NULL, 16)),
+		static_cast<uint32_t>(strtoul(m_buffer + 10, (char **)NULL, 16)),
+		static_cast<uint32_t>(strtoul(m_buffer + 19, (char **)NULL, 16)),
+		static_cast<uint32_t>(strtoul(m_buffer + 28, (char **)NULL, 16))
+	};
 }
