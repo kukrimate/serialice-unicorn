@@ -124,9 +124,9 @@ int main(int argc, char **argv)
 	firmware_fs.open(firmware_path, std::fstream::in);
 
 	// Read ROM
-	firmware_fs.seekg(0, std::fstream::seekdir::_S_end);
+	firmware_fs.seekg(0, std::ios_base::end);
 	size_t rom_size = firmware_fs.tellg();
-	firmware_fs.seekg(0, std::fstream::seekdir::_S_beg);
+	firmware_fs.seekg(0, std::ios_base::beg);
 	std::vector<char> rom_data;
 	rom_data.reserve(rom_size);
 	firmware_fs.read(rom_data.data(), rom_size);

@@ -4,9 +4,14 @@ cmake_minimum_required(VERSION 3.1)
 set(UNICORN_ARCH "x86" CACHE STRING "Unicorn architecture")
 add_subdirectory(unicorn)
 
-# liblua-5.3
 include(FindPkgConfig)
-pkg_check_modules(LUA53 REQUIRED IMPORTED_TARGET lua-5.3)
+if (APPLE)
+	# Use Lua from macports
+	pkg_check_modules(LUA53 REQUIRED IMPORTED_TARGET lua-c++)
+else()
+	# otheriwse Linux packaging is usually versioned
+	pkg_check_modules(LUA53 REQUIRED IMPORTED_TARGET lua-5.3)
+endif()
 
 # Project for serialice-unicorn
 project(serialice-unicorn CXX)
