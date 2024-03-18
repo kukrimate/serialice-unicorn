@@ -5,7 +5,6 @@
  */
 
 #include <exception>
-#include <iostream>
 
 #include <unicorn/unicorn.h>
 
@@ -33,41 +32,90 @@ public:
 			throw UcException(err); \
 	} while (false)
 
+
 uint32_t Emulator::hook_io_read(uc_engine *uc, uint32_t port, int size, void *user_data)
 {
-	return static_cast<Emulator *>(user_data)->handle_io_read(port, size);
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		return emu->handle_io_read(port, size);
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(emu->m_uc);
+		return 0;
+	}
 }
 
 void Emulator::hook_io_write(uc_engine *uc, uint32_t port, int size, uint32_t value, void *user_data)
 {
-	static_cast<Emulator *>(user_data)->handle_io_write(port, size, value);
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		static_cast<Emulator *>(user_data)->handle_io_write(port, size, value);
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(emu->m_uc);
+	}
 }
 
 bool Emulator::hook_mem_read(uc_engine *uc, int type, uint64_t address, int size, int64_t value, void *user_data, uint64_t *result)
 {
-	*result = static_cast<Emulator *>(user_data)->handle_mem_read(address, size);
-	return true; // We have Handled the read
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		*result = static_cast<Emulator *>(user_data)->handle_mem_read(address, size);
+		return true;
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(emu->m_uc);
+		return true;
+	}
 }
 
 bool Emulator::hook_mem_write(uc_engine *uc, int type, uint64_t address, int size, int64_t value, void *user_data)
 {
-	static_cast<Emulator *>(user_data)->handle_mem_write(address, size, value);
-	return true; // Handled have the write
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		static_cast<Emulator *>(user_data)->handle_mem_write(address, size, value);
+		return true;
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(emu->m_uc);
+		return true;
+	}
 }
 
 bool Emulator::hook_rdmsr(uc_engine *uc, void *user_data)
 {
-	return static_cast<Emulator *>(user_data)->handle_rdmsr();
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		return static_cast<Emulator *>(user_data)->handle_rdmsr();
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(static_cast<Emulator *>(user_data)->m_uc);
+		return true;
+	}
 }
 
 bool Emulator::hook_wrmsr(uc_engine *uc, void *user_data)
 {
-	return static_cast<Emulator *>(user_data)->handle_wrmsr();
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		return static_cast<Emulator *>(user_data)->handle_wrmsr();
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(static_cast<Emulator *>(user_data)->m_uc);
+		return true;
+	}
 }
 
 bool Emulator::hook_cpuid(uc_engine *uc, void *user_data)
 {
-	return static_cast<Emulator *>(user_data)->handle_cpuid();
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		return static_cast<Emulator *>(user_data)->handle_cpuid();
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(static_cast<Emulator *>(user_data)->m_uc);
+		return true;
+	}
 }
 
 static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {}
@@ -273,10 +321,8 @@ static uc_x86_reg reg2uc(Register reg)
 
 uint32_t Emulator::read_register(Register reg)
 {
-	uint32_t val;
+	uint32_t val = 0;
 	UC_DO(uc_reg_read(m_uc, reg2uc(reg), &val));
-	if (reg == CS)
-		val &= 0xffff;
 	return val;
 }
 
@@ -285,10 +331,19 @@ void Emulator::write_register(Register reg, uint32_t val)
 	UC_DO(uc_reg_write(m_uc, reg2uc(reg), &val));
 }
 
+uint32_t Emulator::read_mem(uint32_t addr, int size)
+{
+	uint32_t val = 0;
+	UC_DO(uc_mem_read(m_uc, addr, &val, size));
+	return val;
+}
+
 void Emulator::start()
 {
 	// Start emulation at X86 reset vector
 	// NOTE: We only set IP=0xfff0, hidden base of CS is set to 0xffff0000
 	// by patching Unicorn Engine to always use the standard X86 reset vector
 	UC_DO(uc_emu_start(m_uc, 0xfff0, 0, 0, 0));
+	if (m_rethrow_me)
+		std::rethrow_exception(m_rethrow_me);
 }

@@ -4,12 +4,8 @@
  * SPDX-License-Identifier: GPL-2.0-only
  */
 
-#include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <optional>
-#include <sstream>
-#include <stdexcept>
 
 #define LUA_COMPAT_5_2
 #include <lua.h>
@@ -36,7 +32,6 @@ static int serialice_register_physical(lua_State *L)
 
 	uint32_t addr = lua_tointeger(L, 1);
 	uint32_t size = lua_tointeger(L, 2);
-	std::cout << std::hex << "Registering physical memory at 0x" << addr << " (0x" << size << " bytes)" << std::dec << std::endl;\
 	g_emulator->map_ram(addr, size);
 	return 1;
 }
@@ -115,9 +110,6 @@ Filter::Filter(
 	const char *mainboard,
 	size_t rom_size)
 {
-
-	std::cout << "SerialICE: LUA init..." << std::endl;
-
 	// Create a LUA context and load LUA libraries
 	L = luaL_newstate();
 	luaL_openlibs(L);
@@ -135,7 +127,6 @@ Filter::Filter(
 	serialice_lua_registers();
 
 	m_script = script;
-
 }
 
 Filter::~Filter()
@@ -149,11 +140,11 @@ void Filter::init_with_emulator(Emulator &emulator)
 
 	// Load script
 	if (luaL_loadfile(L, m_script))
-		throw format_error("Couldn't load SerialICE script: ", lua_tostring(L, -1));
+		throw_fmt("Couldn't load SerialICE script: %s", lua_tostring(L, -1));
 
 	// Run script
 	if (lua_pcall(L, 0, 1, 0))
-		throw format_error("Failed to run script: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run script: %s", lua_tostring(L, -1));
 
 	lua_pop(L, 1);
 }
@@ -178,7 +169,7 @@ int Filter::io_read_pre(Emulator &emulator, uint16_t port, int size)
 	lua_pushinteger(L, port);
 	lua_pushinteger(L, size);
 	if (lua_pcall(L, 2, 2, 0))
-		throw format_error("Failed to run function SerialICE_io_read_filter: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_io_read_filter: %s", lua_tostring(L, -1));
 	int ret = 0;
 	ret |= lua_toboolean(L, -1) ? READ_FROM_QEMU : 0;
 	ret |= lua_toboolean(L, -2) ? READ_FROM_SERIALICE : 0;
@@ -195,7 +186,7 @@ int Filter::io_write_pre(Emulator &emulator, uint64_t * data, uint16_t port, int
 	lua_pushinteger(L, size);
 	lua_pushinteger(L, *data);
 	if (lua_pcall(L, 3, 3, 0))
-		throw format_error("Failed to run function SerialICE_io_write_filter: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_io_write_filter: %s", lua_tostring(L, -1));
 	*data = lua_tointeger(L, -1);
 	int ret = 0;
 	ret |= lua_toboolean(L, -2) ? WRITE_TO_QEMU : 0;
@@ -212,7 +203,7 @@ int Filter::load_pre(Emulator &emulator, uint32_t addr, int size)
 	lua_pushinteger(L, addr);
 	lua_pushinteger(L, size);
 	if (lua_pcall(L, 2, 2, 0))
-		throw format_error("Failed run SerialICE_memory_read_filter: ", lua_tostring(L, -1));
+		throw_fmt("Failed run SerialICE_memory_read_filter: %s", lua_tostring(L, -1));
 	int ret = 0;
 	ret |= lua_toboolean(L, -1) ? READ_FROM_QEMU : 0;
 	ret |= lua_toboolean(L, -2) ? READ_FROM_SERIALICE : 0;
@@ -229,7 +220,7 @@ int Filter::store_pre(Emulator &emulator, uint32_t addr, int size, uint64_t * da
 	lua_pushinteger(L, size);
 	lua_pushinteger(L, *data);
 	if (lua_pcall(L, 3, 3, 0))
-		throw format_error("Failed to run function SerialICE_memory_write_filter: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_memory_write_filter: %s", lua_tostring(L, -1));
 	*data = lua_tointeger(L, -1);
 	int ret = 0;
 	ret |= lua_toboolean(L, -2) ? WRITE_TO_QEMU : 0;
@@ -247,7 +238,7 @@ int Filter::wrmsr_pre(Emulator &emulator, uint32_t addr, uint32_t * hi, uint32_t
 	lua_pushinteger(L, *hi);
 	lua_pushinteger(L, *lo);
 	if (lua_pcall(L, 3, 4, 0))
-		throw format_error("Failed to run function SerialICE_msr_write_filter: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_msr_write_filter: %s", lua_tostring(L, -1));
 	*lo = lua_tointeger(L, -1);
 	*hi = lua_tointeger(L, -2);
 	int ret = 0;
@@ -264,7 +255,7 @@ int Filter::rdmsr_pre(Emulator &emulator, uint32_t addr)
 	lua_getglobal(L, "SerialICE_msr_read_filter");
 	lua_pushinteger(L, addr);
 	if (lua_pcall(L, 1, 2, 0))
-		throw format_error("Failed to run function SerialICE_msr_read_filter: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_msr_read_filter: %s", lua_tostring(L, -1));
 	int ret = 0;
 	ret |= lua_toboolean(L, -1) ? WRITE_TO_QEMU : 0;
 	ret |= lua_toboolean(L, -2) ? WRITE_TO_SERIALICE : 0;
@@ -280,7 +271,7 @@ int Filter::cpuid_pre(Emulator &emulator, uint32_t eax, uint32_t ecx)
 	lua_pushinteger(L, eax);
 	lua_pushinteger(L, ecx);
 	if (lua_pcall(L, 2, 2, 0))
-		throw format_error("Failed to run function SerialICE_cpuid_filter: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_cpuid_filter: %s", lua_tostring(L, -1));
 	int ret = 0;
 	ret |= lua_toboolean(L, -1) ? WRITE_TO_QEMU : 0;
 	ret |= lua_toboolean(L, -2) ? WRITE_TO_SERIALICE : 0;
@@ -295,7 +286,7 @@ void Filter::load_post(Emulator &emulator, uint64_t *data)
 	lua_getglobal(L, "SerialICE_memory_read_log");
 	lua_pushinteger(L, *data);
 	if (lua_pcall(L, 1, 1, 0))
-		throw format_error("Failed to run SerialICE_memory_read_log: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_memory_read_log: %s", lua_tostring(L, -1));
 	*data = lua_tointeger(L, -1);
 	lua_pop(L, 1);
 }
@@ -306,7 +297,7 @@ void Filter::store_post(Emulator &emulator)
 
 	lua_getglobal(L, "SerialICE_memory_write_log");
 	if (lua_pcall(L, 0, 0, 0))
-		throw format_error("Failed to run function SerialICE_memory_write_log: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_memory_write_log: %s", lua_tostring(L, -1));
 }
 
 void Filter::io_read_post(Emulator &emulator, uint64_t *data)
@@ -316,7 +307,7 @@ void Filter::io_read_post(Emulator &emulator, uint64_t *data)
 	lua_getglobal(L, "SerialICE_io_read_log");
 	lua_pushinteger(L, *data);
 	if (lua_pcall(L, 1, 1, 0))
-		throw format_error("Failed to run function SerialICE_io_read_log: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_io_read_log: %s", lua_tostring(L, -1));
 	*data = lua_tointeger(L, -1);
 	lua_pop(L, 1);
 }
@@ -327,7 +318,7 @@ void Filter::io_write_post(Emulator &emulator)
 
 	lua_getglobal(L, "SerialICE_io_write_log");
 	if (lua_pcall(L, 0, 0, 0))
-		throw format_error("Failed to run function SerialICE_io_write_log: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_io_write_log: %s", lua_tostring(L, -1));
 }
 
 void Filter::wrmsr_post(Emulator &emulator)
@@ -336,7 +327,7 @@ void Filter::wrmsr_post(Emulator &emulator)
 
 	lua_getglobal(L, "SerialICE_msr_write_log");
 	if (lua_pcall(L, 0, 0, 0))
-		throw format_error("Failed to run function SerialICE_msr_write_log: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_msr_write_log: %s", lua_tostring(L, -1));
 }
 
 void Filter::rdmsr_post(Emulator &emulator, uint32_t *hi, uint32_t *lo)
@@ -347,7 +338,7 @@ void Filter::rdmsr_post(Emulator &emulator, uint32_t *hi, uint32_t *lo)
 	lua_pushinteger(L, *hi);
 	lua_pushinteger(L, *lo);
 	if (lua_pcall(L, 2, 2, 0))
-		throw format_error("Failed to run function SerialICE_msr_read_log: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run SerialICE_msr_read_log: %s", lua_tostring(L, -1));
 	*hi = lua_tointeger(L, -2);
 	*lo = lua_tointeger(L, -1);
 	lua_pop(L, 2);
@@ -363,7 +354,7 @@ void Filter::cpuid_post(Emulator &emulator, CpuidRegs &res)
 	lua_pushinteger(L, res.ecx);
 	lua_pushinteger(L, res.edx);
 	if (lua_pcall(L, 4, 4, 0))
-		throw format_error("Failed to run function SerialICE_cpuid_log: ", lua_tostring(L, -1));
+		throw_fmt("Failed to run function SerialICE_cpuid_log: %s", lua_tostring(L, -1));
 	res.edx = lua_tointeger(L, -1);
 	res.ecx = lua_tointeger(L, -2);
 	res.ebx = lua_tointeger(L, -3);

@@ -18,6 +18,6 @@ project(serialice-unicorn CXX)
 add_executable(serialice-unicorn
 	src/com.cpp src/com.h src/emu.cpp src/emu.h
 	src/filter.cpp src/filter.h src/main.cpp
-	src/misc.h)
+	src/misc.h src/misc.cpp)
 set_property(TARGET serialice-unicorn PROPERTY CXX_STANDARD 20)
 target_link_libraries(serialice-unicorn unicorn PkgConfig::LUA53)

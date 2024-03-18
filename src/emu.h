@@ -8,6 +8,8 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <optional>
 
 class Target;
 class Filter;
@@ -24,6 +26,9 @@ private:
 	uc_engine *m_uc;
 	Target &m_target;
 	Filter &m_filter;
+
+	// Captured exceptions inside a hook
+	std::exception_ptr m_rethrow_me {};
 
 	// Unicorn hooks (called by C)
 	static uint32_t hook_io_read(uc_engine *uc, uint32_t port, int size, void *user_data);
@@ -53,6 +58,8 @@ public:
 
 	uint32_t read_register(Register reg);
 	void write_register(Register reg, uint32_t val);
+
+	uint32_t read_mem(uint32_t addr, int size);
 
 	void start();
 };

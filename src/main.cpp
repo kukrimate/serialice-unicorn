@@ -7,14 +7,9 @@
 #include <getopt.h>
 
 #include <algorithm>
-#include <array>
 #include <cstring>
-#include <fstream>
-#include <iostream>
-#include <limits>
 #include <optional>
-#include <string>
-#include <vector>
+#include <stdexcept>
 
 #include <unicorn/unicorn.h>
 
@@ -77,16 +72,16 @@ int main(int argc, char **argv)
 	};
 
 	std::optional<uc_cpu_x86>  opt_cpu = UC_CPU_X86_QEMU64;
-	std::optional<std::string> opt_firmware;
-	std::optional<std::string> opt_simba;
-	std::optional<std::string> opt_serial;
-	bool                       show_help = false;
+	std::optional<const char *> opt_firmware;
+	std::optional<const char *> opt_simba;
+	std::optional<const char *> opt_serial;
+	bool                        show_help = false;
 
 	for (int c, longind; (c = getopt_long(argc, argv, "c:f:S:s:lh", longopts, &longind)) != -1; )
 		switch (c) {
 		case 'c':
 			if (!(opt_cpu = str2uc_cpu_x86(optarg)))
-				std::cerr << "Invalid CPU type " << optarg << std::endl;
+				fprintf(stderr, "Invalid CPU type %s\n", optarg);
 			break;
 		case 'f':
 			opt_firmware = optarg;
@@ -103,53 +98,69 @@ int main(int argc, char **argv)
 		}
 
 	if (!opt_cpu || !opt_firmware || !opt_simba || !opt_serial || show_help) {
-		std::cerr << "Usage: " << argv[0] << " OPTIONS" << std::endl
-			  << std::endl
-		          << "Options:" << std::endl
-		          << "  -c, --cpu [CPU_TYPE]            CPU type" << std::endl
-		          << "  -f, --firmware [FIRMWARE_PATH]  Firmware binary" << std::endl
-		          << "  -S, --simba [SIMBA_PATH]        Simba script" << std::endl
-		          << "  -s, --serial [SERIAL_PATH]      Serial port" << std::endl
- 		          << "  -h, --help                      Show help" << std::endl;
+		fprintf(stderr, "Usage %s OPTIONS\n\n"
+		                "Options:\n"
+		                "  -c, --cpu [CPU_TYPE]            CPU type\n"
+		                "  -f, --firmware [FIRMWARE_PATH]  Firmware binary\n"
+		                "  -S, --simba [SIMBA_PATH]        Simba script\n"
+		                "  -s, --serial [SERIAL_PATH]      Serial port\n"
+		                "  -h, --help                      Show help\n",
+		                argv[0]);
 		return EXIT_FAILURE;
 	}
 
-	auto firmware_path = opt_firmware.value();
-	auto simba_path = opt_simba.value();
-	auto serial_path = opt_serial.value();
-
-	// Open firmware binary
-	std::fstream firmware_fs;
-	firmware_fs.exceptions(std::fstream::failbit | std::fstream::badbit);
-	firmware_fs.open(firmware_path, std::fstream::in);
-
 	// Read ROM
-	firmware_fs.seekg(0, std::ios_base::end);
-	size_t rom_size = firmware_fs.tellg();
-	firmware_fs.seekg(0, std::ios_base::beg);
-	std::vector<char> rom_data;
-	rom_data.reserve(rom_size);
-	firmware_fs.read(rom_data.data(), rom_size);
+	auto rom = read_file(*opt_firmware);
 
 	// Setup target
-	Target target(opt_serial.value().c_str());
-	target.version();
+	printf("Waiting for handshake with target...\n");
+	Target target(*opt_serial);
+	auto version = target.version();
+	printf("Version: %s\n", version.c_str());
 	auto mainboard = target.mainboard();
+	printf("Mainboard: %s\n", mainboard.c_str());
 
 	// Setup filter
-	Filter filter(opt_simba.value().c_str(), mainboard.c_str(), rom_size);
+	Filter filter(*opt_simba, mainboard.c_str(), rom.size());
 
 	// Setup emulator
-	Emulator emulator(opt_cpu.value(), target, filter);
+	Emulator emulator(*opt_cpu, target, filter);
 	filter.init_with_emulator(emulator);
 
 	// Map ROM into emulator
-	emulator.map_rom(rom_data.data(), 4ULL * GiB - rom_size, rom_size);
-	auto low_map_size = std::min<size_t>(rom_size, 128 * KiB);
-	emulator.map_rom(rom_data.data(), 1 * MiB - low_map_size, low_map_size);
+	emulator.map_rom(rom.data(), 4ULL * GiB - rom.size(), rom.size());
+	auto low_map_size = std::min<size_t>(rom.size(), 128 * KiB);
+	emulator.map_rom(rom.data(), 1 * MiB - low_map_size, low_map_size);
 
 	// Run emulation
-	emulator.start();
+	try {
+		emulator.start();
+	} catch (const std::exception &ex) {
+		fprintf(stderr, "Caught exception during emulation: %s\n", ex.what());
+		// Dump emulator state
+		uint16_t cs = emulator.read_register(CS);
+		uint32_t eip = emulator.read_register(EIP);
+		uint32_t eax = emulator.read_register(EAX);
+		uint32_t ebx = emulator.read_register(EBX);
+		uint32_t ecx = emulator.read_register(ECX);
+		uint32_t edx = emulator.read_register(EDX);
+		uint32_t esi = emulator.read_register(ESI);
+		uint32_t edi = emulator.read_register(EDI);
+		uint32_t ebp = emulator.read_register(EBP);
+		uint32_t esp = emulator.read_register(ESP);
+		fprintf(stderr,
+			"Registers at exit\n"
+			"  CS:EIP %04x:%08x\n"
+			"  EAX %08x EBX %08x ECX %08x EDX %08x\n"
+			"  ESI %08x EDI %08x EBP %08x ESP %08x\n"
+			"Stack at exit (ESP - 32 dwords)\n",
+			cs, eip, eax, ebx, ecx, edx, esi, edi, ebp, esp);
+		for (int i = 0; i < 32; ++i) {
+			uint32_t addr = esp - (32 - i) * 4;
+			fprintf(stderr, "  [%08x] = %08x\n", addr, emulator.read_mem(addr, 4));
+		}
+		return EXIT_FAILURE;
+	}
 
 	return EXIT_SUCCESS;
 }

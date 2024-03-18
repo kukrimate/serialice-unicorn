@@ -9,20 +9,22 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include "misc.h"
 
 struct CpuidRegs;
 
 class Target {
 private:
-	int m_fd;
+	FileHandle m_handle;
+
 	char *m_buffer;
 	char *m_command;
 
 	int m_handshake_mode = 0;
 
-	int serialice_read(void *buf, size_t nbyte);
-	int serialice_write(const void *buf, size_t nbyte);
-	int serialice_wait_prompt();
+	void serialice_read(void *buf, size_t nbyte);
+	void serialice_write(const void *buf, size_t nbyte);
+	void serialice_wait_prompt();
 
 	void serialice_command(const char *command, int reply_len);
 
@@ -30,8 +32,9 @@ public:
 	Target(const char *device);
 	~Target();
 
-	void version();
+	std::string version();
 	std::string mainboard();
+
 	uint64_t io_read(uint16_t port, unsigned int size);
 	void io_write(uint16_t port, unsigned int size, uint64_t data);
 	uint64_t load(uint32_t addr, unsigned int size);
