@@ -115,10 +115,12 @@ int main(int argc, char **argv)
 	// Setup target
 	printf("Waiting for handshake with target...\n");
 	Target target(*opt_serial);
-	auto version = target.version();
-	printf("Version: %s\n", version.c_str());
-	auto mainboard = target.mainboard();
-	printf("Mainboard: %s\n", mainboard.c_str());
+	// auto version = target.version();
+	// printf("Version: %s\n", version.c_str());
+	// auto mainboard = target.mainboard();
+	// printf("Mainboard: %s\n", mainboard.c_str());
+	// target.enable_binary();
+	std::string mainboard = "ASUS H110M-ADP";
 
 	// Setup filter
 	Filter filter(*opt_simba, mainboard.c_str(), rom.size());

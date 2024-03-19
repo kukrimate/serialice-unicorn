@@ -17,16 +17,13 @@ class Target {
 private:
 	FileHandle m_handle;
 
-	char *m_buffer;
-	char *m_command;
-
-	int m_handshake_mode = 0;
+	unsigned char *m_buffer;
+	unsigned char *m_command;
 
 	void serialice_read(void *buf, size_t nbyte);
 	void serialice_write(const void *buf, size_t nbyte);
-	void serialice_wait_prompt();
 
-	void serialice_command(const char *command, int reply_len);
+	void serialice_command(std::string_view command, int reply_len);
 
 public:
 	Target(const char *device);

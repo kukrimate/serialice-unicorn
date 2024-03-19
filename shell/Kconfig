@@ -1,0 +1,499 @@
+##
+## SerialICE
+##
+## Copyright (C) 2009 coresystems GmbH
+##
+## This program is free software; you can redistribute it and/or modify
+## it under the terms of the GNU General Public License as published by
+## the Free Software Foundation; version 2 of the License.
+##
+## This program is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+## GNU General Public License for more details.
+##
+## You should have received a copy of the GNU General Public License
+## along with this program; if not, write to the Free Software
+## Foundation, Inc.
+##
+
+#
+# For a description of the syntax of this configuration file,
+# see http://lxr.linux.no/source/Documentation/kbuild/kconfig-language.txt.
+#
+
+mainmenu "SerialICE Configuration"
+
+choice
+	prompt "Mainboard model"
+
+config BOARD_QEMU_X86
+	bool "Qemu"
+
+config BOARD_ACER_ES1_572
+	bool "Acer ES1-572"
+	select LPSS_UART
+
+config BOARD_AMD_SERENGETI_CHEETAH
+	bool "AMD Serengeti Cheetah (SimNOW)"
+
+config BOARD_AOPEN_DXPL_PLUS
+	bool "AOpen DXPL Plus"
+
+config BOARD_ASROCK_775I65G
+	bool "ASRock 775i65G"
+
+config BOARD_ASROCK_939A785GMH
+	bool "ASRock 939A785GMH"
+	select BUILD_XMMSTACK
+
+config BOARD_ASROCK_H81M_HDS
+	bool "ASRock H81M-HDS"
+
+config BOARD_ASROCK_P4I65GV
+	bool "ASRock P4i65GV"
+
+config BOARD_ASUS_F2A85_M
+	bool "ASUS F2A85-M"
+	select BUILD_XMMSTACK
+
+config BOARD_ASUS_H110M_ADP
+	bool "ASUS H110M-ADP"
+
+config BOARD_ASUS_K8V_X
+	bool "ASUS K8V-X"
+	select VIA_ROMSTRAP
+	select BUILD_XMMSTACK
+
+config BOARD_ASUS_M2V_MX_SE
+	bool "ASUS M2V-MX SE"
+	select VIA_ROMSTRAP
+	select BUILD_XMMSTACK
+
+config BOARD_ASUS_M4A77TD_PRO
+	bool "ASUS M4A77TD-PRO"
+	select BUILD_XMMSTACK
+
+config BOARD_ASUS_P2_M3A3200
+	bool "ASUS Pundit P2-M3A3200"
+
+config BOARD_ASUS_P2B
+	bool "ASUS P2B"
+
+config BOARD_ASUS_P4P800_VM
+	bool "ASUS P4P800-VM"
+
+config BOARD_ASUS_P5QC
+       bool "ASUS P5QC"
+
+config BOARD_COMMELL_LV_672
+	bool "Commell LV-672"
+
+config BOARD_DELL_S1850
+	bool "Dell PowerEdge S1850"
+
+config BOARD_HP_DL165_G6
+	bool "HP DL165 G6"
+
+config BOARD_INTEL_D845GBV2
+	bool "Intel D845GBV2"
+
+config BOARD_INTEL_D945GCLF
+	bool "Intel D945GCLF"
+
+config BOARD_INTEL_D945GNT
+	bool "Intel D945GNT"
+
+config BOARD_INTEL_D946GZIS
+	bool "Intel D946GZIS"
+
+config BOARD_JETWAY_NF81_T56N_LF
+	bool "Jetway NF81-T56N-LF"
+	select BUILD_XMMSTACK
+
+config BOARD_KONTRON_986LCD_M
+	bool "Kontron 986LCD-M/mITX"
+
+config BOARD_MSI_MS6178
+	bool "MSI MS6178"
+
+config BOARD_MSI_MS7133
+	bool "MSI MS-7133"
+
+config BOARD_RCA_RM4100
+	bool "RCA RM4100"
+
+config BOARD_RODA_RK886EX
+	bool "Roda RK886EX"
+
+config BOARD_SUPERMICRO_X11SSM_F
+	bool "Supermicro X11SSM-F"
+
+config BOARD_TELEVIDEO_TC7010
+	bool "Televideo TC7010"
+
+config BOARD_THOMSON_IP1000
+	bool "Thomson IP1000"
+
+config BOARD_TYAN_S2892
+	bool "Tyan S2892"
+	select CK804_ROMSTRAP
+
+config BOARD_TYAN_S2895
+	bool "Tyan S2895"
+	select CK804_ROMSTRAP
+
+config BOARD_TYAN_S2912
+	bool "Tyan S2912"
+	select MCP55_ROMSTRAP
+
+config BOARD_VIA_EPIA_M850
+	bool "VIA EPIA M850"
+
+config BOARD_WYSE_S50
+	bool "WYSE S50"
+
+config BOARD_LENOVO_X60
+	bool "Lenovo X60"
+
+config BOARD_ZIDA_TX98_3D
+	bool "Zida TX98-3D"
+
+endchoice
+
+config BOARD_INIT
+	string
+	default "qemu-x86.c" if BOARD_QEMU_X86
+	default "amd_serengeti-cheetah.c" if BOARD_AMD_SERENGETI_CHEETAH
+	default "asus_p2-m3a3200.c" if BOARD_ASUS_P2_M3A3200
+	default "kontron_986lcd-m.c" if BOARD_KONTRON_986LCD_M
+	default "roda_rk886ex.c" if BOARD_RODA_RK886EX
+	default "intel_d94x.c" if BOARD_INTEL_D945GCLF || BOARD_INTEL_D945GNT || BOARD_INTEL_D946GZIS
+	default "dell_s1850.c" if BOARD_DELL_S1850
+	default "asus_f2a85-m.c" if BOARD_ASUS_F2A85_M
+	default "asus_h110m-adp.c" if BOARD_ASUS_H110M_ADP
+	default "asus_m2v-mx_se.c" if BOARD_ASUS_M2V_MX_SE
+	default "asus_k8v-x.c" if BOARD_ASUS_K8V_X
+	default "msi_ms6178.c" if BOARD_MSI_MS6178
+	default "msi_ms7133.c" if BOARD_MSI_MS7133
+	default "rca_rm4100.c" if BOARD_RCA_RM4100
+	default "thomson_ip1000.c" if BOARD_THOMSON_IP1000
+	default "asus_p2b.c" if BOARD_ASUS_P2B
+	default "asus_m4a77td-pro.c" if BOARD_ASUS_M4A77TD_PRO
+	default "asrock_939a785gmh.c" if BOARD_ASROCK_939A785GMH
+	default "televideo_tc7010.c" if BOARD_TELEVIDEO_TC7010
+	default "tyan_s2892.c" if BOARD_TYAN_S2892
+	default "tyan_s2895.c" if BOARD_TYAN_S2895
+	default "tyan_s2912.c" if BOARD_TYAN_S2912
+	default "hp_dl165_g6.c" if BOARD_HP_DL165_G6
+	default "wyse_s50.c" if BOARD_WYSE_S50
+	default "asrock_p4i65gv.c" if BOARD_ASROCK_P4I65GV
+	default "asus_p4p800-vm.c" if BOARD_ASUS_P4P800_VM
+	default "asus_p5qc.c" if BOARD_ASUS_P5QC
+	default "aopen_dxpl-plus.c" if BOARD_AOPEN_DXPL_PLUS
+	default "via_epia_m850.c" if BOARD_VIA_EPIA_M850
+	default "intel_d845gbv2.c" if BOARD_INTEL_D845GBV2
+	default "asrock_775i65g.c" if BOARD_ASROCK_775I65G
+	default "commell_lv_672.c" if BOARD_COMMELL_LV_672
+	default "jetway_nf81_t56n_lf.c" if BOARD_JETWAY_NF81_T56N_LF
+	default "lenovo_x60.c" if BOARD_LENOVO_X60
+	default "zida_tx98-3d.c" if BOARD_ZIDA_TX98_3D
+	default "asrock_h81m-hds.c" if BOARD_ASROCK_H81M_HDS
+	default "acer_es1-572.c" if BOARD_ACER_ES1_572
+	default "supermicro_x11ssm-f.c" if BOARD_SUPERMICRO_X11SSM_F
+
+config SOUTHBRIDGE_INIT
+	string
+	default "southbridge/intel-ich7.c" if BOARD_KONTRON_986LCD_M || BOARD_ASROCK_H81M_HDS
+	default "southbridge/intel-sunrise.c" if BOARD_ASUS_H110M_ADP || BOARD_SUPERMICRO_X11SSM_F || BOARD_ACER_ES1_572
+	default "southbridge/amd-sbxxx.c" if BOARD_ASUS_F2A85_M || BOARD_JETWAY_NF81_T56N_LF
+	default "southbridge/amd-sbxxx.c" if BOARD_ASUS_P2_M3A3200
+
+config SUPERIO_INIT
+	string
+	default "superio/ite-it8718f.c" if BOARD_ASUS_P2_M3A3200
+	default "superio/winbond-w83627thg.c" if BOARD_KONTRON_986LCD_M
+	default "superio/fintek-f71869ad.c" if BOARD_JETWAY_NF81_T56N_LF
+	default "superio/nuvoton-nct6776.c" if BOARD_ASROCK_H81M_HDS || BOARD_ASUS_H110M_ADP
+	default "superio/aspeed-ast.c" if BOARD_SUPERMICRO_X11SSM_F
+
+choice
+	prompt "ROM size"
+	default ROM_64K
+
+config ROM_64K
+	boolean "64 KB"
+
+config ROM_128K
+	boolean "128 KB"
+
+config ROM_256K
+	boolean "256 KB"
+
+config ROM_512K
+	boolean "512 KB"
+
+config ROM_1024K
+	boolean "1024 KB"
+
+config ROM_2048K
+	boolean "2048 KB"
+
+config ROM_4096K
+	boolean "4096 KB"
+
+config ROM_8192K
+	boolean "8192 KB"
+
+config ROM_16384K
+	boolean "16384 KB"
+
+endchoice
+
+config ROMSIZE
+	hex
+	default 0x10000 if ROM_64K
+	default 0x20000 if ROM_128K
+	default 0x40000 if ROM_256K
+	default 0x80000 if ROM_512K
+	default 0x100000 if ROM_1024K
+	default 0x200000 if ROM_2048K
+	default 0x400000 if ROM_4096K
+	default 0x800000 if ROM_8192K
+	default 0x1000000 if ROM_16384K
+
+choice
+	prompt "Target communication"
+
+config SERIAL
+	boolean "Serial console support"
+	help
+	  SerialICE shell on serial console.
+
+config USB
+	boolean "USB2 console support (BROKEN)"
+	depends on EXPERIMENTAL
+	help
+	  Send SerialICE shell to USB2 (EHCI) console.
+
+	  Note: This requires a USB2 controller which supports the EHCI
+	  Debug Port capability. Controllers which are known to work:
+
+	    * 10b9:5239 ALi Corporation USB 2.0 (USB PCI card)
+	    * 8086:24cd Intel ICH4/ICH4-M
+	    * 8086:24dd Intel ICH5
+	    * 8086:265c Intel ICH6
+	    * 8086:268c Intel 631xESB/632xESB/3100
+	    * 8086:27cc Intel ICH7
+	    * 8086:2836 Intel ICH8
+	    * 8086:283a Intel ICH8
+	    * 8086:293a Intel ICH9
+	    * 10de:0088 NVIDIA MCP2A
+	    * 10de:005b NVIDIA CK804
+	    * 10de:026e NVIDIA MCP51
+	    * 10de:036d NVIDIA MCP55
+	    * 10de:03f2 NVIDIA MCP61
+	    * 1002:4386 ATI/AMD SB600
+	    * 1106:3104 VIA VX800
+
+	  See http://www.coreboot.org/EHCI_Debug_Port for an up-to-date list.
+
+endchoice
+
+
+choice
+	prompt "Serial console COM port"
+	default SERIAL_COM1
+	depends on SERIAL
+
+config SERIAL_COM1
+	bool "COM1/ttyS0"
+	help
+	  Serial console on COM1/ttyS0.
+
+config SERIAL_COM2
+	bool "COM2/ttyS1"
+	help
+	  Serial console on COM2/ttyS1.
+
+endchoice
+
+config SERIAL_BASE_ADDRESS
+	hex
+	default 0xfe034000 if BOARD_ACER_ES1_572
+
+config LPSS_UART
+	bool
+
+config LPSS_UART_INDEX
+	int
+	default 2
+
+config SERIAL_PORT
+	hex
+	default 0x3f8 if SERIAL_COM1
+	default 0x2f8 if SERIAL_COM2
+
+
+choice
+	prompt "Serial console speed"
+	default SERIAL_115200
+	depends on SERIAL
+
+config SERIAL_460800
+	bool "460800 bps"
+	help
+	  Set serial port speed to 460800 bps.
+
+config SERIAL_230400
+	bool "230400 bps"
+	help
+	  Set serial port speed to 230400 bps.
+
+config SERIAL_115200
+	bool "115200 bps"
+	help
+	  Set serial port speed to 115200 bps.
+
+config SERIAL_57600
+	bool "57600 bps"
+	help
+	  Set serial port speed to 57600 bps.
+
+config SERIAL_38400
+	bool "38400 bps"
+	help
+	  Set serial port speed to 38400 bps.
+
+config SERIAL_19200
+	bool "19200 bps"
+	help
+	  Set serial port speed to 19200 bps.
+
+config SERIAL_9600
+	bool "9600 bps"
+	help
+	  Set serial port speed to 9600 bps.
+
+endchoice
+
+config SERIAL_BAUDRATE
+	int
+	default 460800 if SERIAL_460800
+	default 230400 if SERIAL_230400
+	default 115200 if SERIAL_115200
+	default 57600 if SERIAL_57600
+	default 38400 if SERIAL_38400
+	default 19200 if SERIAL_19200
+	default 9600 if SERIAL_9600
+
+
+menu "Debugging setup"
+
+config EXPERIMENTAL
+	bool "Prompt for development and/or incomplete code"
+	help
+	  Enable this option if you want to test development features or
+	  incomplete/unsupported code
+
+	  We do not make any guarantees about anything that is marked
+	  as EXPERIMENTAL! You have been warned!
+
+choice
+	prompt "POST card"
+	default POST_NONE
+
+config POST_NONE
+	boolean "None"
+
+config POST_PCI
+	boolean "PCI POST card"
+
+config POST_LPC
+	boolean "LPC POST card"
+
+endchoice
+
+config EXPERT
+	bool "Expert mode"
+	help
+	  This allows you to select certain advanced configuration options.
+	  It is mainly intended for SerialICE developers.
+
+	  Warning: Only enable this option if you really know what you're
+	  doing! You have been warned!
+
+config HAVE_SSE
+	bool "Enable SSE"
+	depends on EXPERT
+	default n
+
+config VIA_ROMSTRAP
+	bool "VIA Southbridge ROMSTRAP"
+	depends on EXPERT
+	default n
+
+config CK804_ROMSTRAP
+	bool "NVIDIA CK804 Southbridge ROMSTRAP"
+	depends on EXPERT
+	default n
+
+config MCP55_ROMSTRAP
+	bool "NVIDIA MCP55 Southbridge ROMSTRAP"
+	depends on EXPERT
+	default n
+
+choice
+	prompt "Build Method"
+	default BUILD_ROMCC
+	depends on EXPERT
+
+config BUILD_ROMCC
+	bool "ROMCC"
+	depends on EXPERT
+
+config BUILD_XMMSTACK
+	bool "XMMSTACK"
+	select HAVE_SSE
+	depends on EXPERT
+
+endchoice
+
+config SUPPORT_64_BIT_ACCESS
+	bool "Support for 64-bit access"
+	depends on EXPERT
+
+endmenu
+
+# blind default options in case CONFIG_EXPERT is not enabled.
+#
+
+config HAVE_SSE
+	bool
+	depends on !EXPERT
+	default n
+
+config VIA_ROMSTRAP
+	bool
+	depends on !EXPERT
+	default n
+
+config MCP55_ROMSTRAP
+	bool
+	depends on !EXPERT
+	default n
+
+config BUILD_ROMCC
+	bool
+	default y
+	depends on !EXPERT
+
+config BUILD_XMMSTACK
+	bool
+	select HAVE_SSE
+	depends on !EXPERT
+
+config SUPPORT_64_BIT_ACCESS
+	bool
+	default n
+	depends on !EXPERT

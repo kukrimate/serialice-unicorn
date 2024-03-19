@@ -63,7 +63,6 @@ retry:
 
 off_t FileHandle::seek(off_t offset, int whence)
 {
-retry:
 	auto ret = ::lseek(m_fd, offset, whence);
 	if (ret < 0)
 		throw_fmt("Seek failed on %s: %s", m_path, strerror(errno));
