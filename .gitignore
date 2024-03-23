@@ -1,4 +1,5 @@
 .cache
-build
 .config
 .config.old
+__pycache__
+build
