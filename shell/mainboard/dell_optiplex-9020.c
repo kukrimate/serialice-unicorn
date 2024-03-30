@@ -1,0 +1,177 @@
+/* SPDX-License-Identifier: GPL-2.0-only */
+
+const char boardname[33]="Dell Optiplex 9020              ";
+
+
+#define ARRAY_SIZE(x) (sizeof (x) / sizeof *(x))
+
+// Global registers
+#define SCH555x_DEVICE_ID		0x20
+#define SCH555x_DEVICE_REV		0x21
+#define SCH555x_DEVICE_MODE		0x24
+
+// Logical device numbers
+#define SCH555x_LDN_EMI			0x00
+#define SCH555x_LDN_8042		0x01
+#define SCH555x_LDN_UART1		0x07
+#define SCH555x_LDN_UART2		0x08
+#define SCH555x_LDN_RUNTIME		0x0a
+#define SCH555x_LDN_FDC			0x0b
+#define SCH555x_LDN_LPCI		0x0c
+#define SCH555x_LDN_PP			0x11
+#define SCH555x_LDN_GLOBAL		0x3f
+
+// LPC interface registers
+#define SCH555x_LPCI_IRQ(i)		(0x40 + (i))
+// DMA channel register is 2 bytes, we care about the second byte
+#define SCH555x_LPCI_DMA(i)		(0x50 + (i) * 2 + 1)
+// BAR offset (inside LPCI) for each LDN
+#define SCH555x_LPCI_LPCI_BAR		0x60
+#define SCH555x_LPCI_EMI_BAR		0x64
+#define SCH555x_LPCI_UART1_BAR		0x68
+#define SCH555x_LPCI_UART2_BAR		0x6c
+#define SCH555x_LPCI_RUNTIME_BAR	0x70
+#define SCH555x_LPCI_8042_BAR		0x78
+#define SCH555x_LPCI_FDC_BAR		0x7c
+#define SCH555x_LPCI_PP_BAR		0x80
+
+// Runtime registers (in I/O space)
+#define SCH555x_RUNTIME_PME_STS		0x00
+#define SCH555x_RUNTIME_PME_EN		0x01
+#define SCH555x_RUNTIME_PME_EN1		0x05
+#define SCH555x_RUNTIME_LED		0x25
+// NOTE: not in the SCH5627P datasheet but Dell's firmware writes to it
+#define SCH555x_RUNTIME_UNK1		0x35
+
+// Needed in the bootblock, thus we map them at a fixed address
+#define SCH555x_EMI_IOBASE		0xa00
+#define SCH555x_RUNTIME_IOBASE		0xa40
+
+
+static void pnp_write_config32(u16 port, u8 offset, u32 value)
+{
+	pnp_write_register(port, offset, value & 0xff);
+	pnp_write_register(port, offset + 1, (value >> 8) & 0xff);
+	pnp_write_register(port, offset + 2, (value >> 16) & 0xff);
+	pnp_write_register(port, offset + 3, (value >> 24) & 0xff);
+}
+
+static void ec_write(u8 addr1, u16 addr2, u8 val)
+{
+	u8 tmp;
+	int timeout;
+
+	// Clear EC-to-Host mailbox
+	tmp = inb(SCH555x_EMI_IOBASE + 1);
+	outb(tmp, SCH555x_EMI_IOBASE + 1);
+
+	// Send address and value to the EC
+	outw(0 | 0x8001, SCH555x_EMI_IOBASE + 2);
+	outw((addr1 * 2) | 0x101, SCH555x_EMI_IOBASE + 4);
+
+	outw(4 | 0x8002, SCH555x_EMI_IOBASE + 2);
+	outl(val | (addr2 << 16), SCH555x_EMI_IOBASE + 4);
+
+	// Wait for acknowledgement message from EC
+	outb(1, SCH555x_EMI_IOBASE);
+	timeout = 0;
+	do {} while (++timeout < 0xfff && (inb(SCH555x_EMI_IOBASE + 1) & 1) == 0);
+}
+
+struct ec_init_entry {
+        u16 addr;
+        u8 val;
+};
+
+static void superio_init(u16 port)
+{
+	int i;
+
+	/*
+	 * Map EMI registers
+	 */
+
+	pnp_enter_ext_func_mode_alt(port);
+	pnp_set_logical_device(port, SCH555x_LDN_LPCI);
+	pnp_write_config32(port, SCH555x_LPCI_EMI_BAR, (SCH555x_EMI_IOBASE << 16) | 0x800f);
+	pnp_exit_ext_func_mode(port);
+
+        /*
+         * Tables from CORE_PEI
+         */
+
+        static const struct ec_init_entry init_table1[] = {
+                {0x08cc, 0x11}, {0x08d0, 0x11}, {0x088c, 0x10}, {0x0890, 0x10},
+                {0x0894, 0x10}, {0x0898, 0x12}, {0x089c, 0x12}, {0x08a0, 0x10},
+                {0x08a4, 0x12}, {0x08a8, 0x10}, {0x0820, 0x12}, {0x0824, 0x12},
+                {0x0878, 0x12}, {0x0880, 0x12}, {0x0884, 0x12}, {0x08e0, 0x12},
+                {0x08e4, 0x12}, {0x083c, 0x10}, {0x0840, 0x10}, {0x0844, 0x10},
+                {0x0848, 0x10}, {0x084c, 0x10}, {0x0850, 0x10}, {0x0814, 0x11},
+        };
+
+        for (i = 0; i < ARRAY_SIZE(init_table1); ++i)
+                ec_write(2, init_table1[i].addr, init_table1[i].val);
+
+        static const struct ec_init_entry init_table2[] = {
+                {0x0005, 0x33}, {0x0018, 0x2f}, {0x0019, 0x2f}, {0x001a, 0x2f},
+                {0x0083, 0xbb}, {0x0085, 0xd9}, {0x0086, 0x2c}, {0x008a, 0x34},
+                {0x008b, 0x60}, {0x0090, 0x5e}, {0x0091, 0x5e}, {0x0092, 0x86},
+                {0x0096, 0xa4}, {0x0097, 0xa4}, {0x0098, 0xa4}, {0x009b, 0xa4},
+                {0x00a0, 0x0a}, {0x00a1, 0x0a}, {0x00ae, 0x7c}, {0x00af, 0x7c},
+                {0x00b0, 0x9e}, {0x00b3, 0x7c}, {0x00b6, 0x08}, {0x00b7, 0x08},
+                {0x00ea, 0x64}, {0x00ef, 0xff}, {0x00f8, 0x15}, {0x00f9, 0x00},
+                {0x00f0, 0x30}, {0x00fd, 0x01}, {0x01a1, 0x00}, {0x01a2, 0x00},
+                {0x01b1, 0x08}, {0x01be, 0x90}, {0x0280, 0x24}, {0x0281, 0x13},
+                {0x0282, 0x03}, {0x0283, 0x0a}, {0x0284, 0x80}, {0x0285, 0x03},
+                {0x0288, 0x80}, {0x0289, 0x0c}, {0x028a, 0x03}, {0x028b, 0x0a},
+                {0x028c, 0x80}, {0x028d, 0x03}, {0x0040, 0x01},
+        };
+
+        /*
+         * Table from pei HWM init
+         */
+
+        for (i = 0; i < ARRAY_SIZE(init_table2); ++i)
+                ec_write(1, init_table2[i].addr, init_table2[i].val);
+
+	static const struct ec_init_entry hwm_init_table[] = {
+		{0x02fc, 0xa0}, {0x02fd, 0x32}, {0x0005, 0x77}, {0x0019, 0x2f},
+		{0x001a, 0x2f}, {0x008a, 0x33}, {0x008b, 0x33}, {0x008c, 0x33},
+		{0x00ba, 0x10}, {0x00d1, 0xff}, {0x00d6, 0xff}, {0x00db, 0xff},
+		{0x0048, 0x00}, {0x0049, 0x00}, {0x007a, 0x00}, {0x007b, 0x00},
+		{0x007c, 0x00}, {0x0080, 0x00}, {0x0081, 0x00}, {0x0082, 0x00},
+		{0x0083, 0xbb}, {0x0084, 0xb0}, {0x01a1, 0x88}, {0x01a4, 0x80},
+		{0x0088, 0x00}, {0x0089, 0x00}, {0x00a0, 0x02}, {0x00a1, 0x02},
+		{0x00a2, 0x02}, {0x00a4, 0x04}, {0x00a5, 0x04}, {0x00a6, 0x04},
+		{0x00ab, 0x00}, {0x00ad, 0x3f}, {0x00b7, 0x07}, {0x0062, 0x50},
+		{0x0000, 0x46}, {0x0000, 0x50}, {0x0000, 0x46}, {0x0000, 0x50},
+		{0x0000, 0x46}, {0x0000, 0x98}, {0x0059, 0x98}, {0x0061, 0x7c},
+		{0x01bc, 0x00}, {0x01bd, 0x00}, {0x01bb, 0x00}, {0x0085, 0xdd},
+		{0x0086, 0xdd}, {0x0087, 0x07}, {0x0090, 0x82}, {0x0091, 0x5e},
+		{0x0095, 0x5d}, {0x0096, 0xa9}, {0x0097, 0x00}, {0x009b, 0x00},
+		{0x00ae, 0x86}, {0x00af, 0x86}, {0x00b3, 0x67}, {0x00c4, 0xff},
+		{0x00c5, 0xff}, {0x00c9, 0xff}, {0x0040, 0x01}, {0x02fc, 0x00},
+		{0x02b3, 0x9a}, {0x02b4, 0x05}, {0x02cc, 0x01}, {0x02d0, 0x4c},
+		{0x02d2, 0x01}, {0x02db, 0x01}, {0x006f, 0x01}, {0x0070, 0x02},
+		{0x0071, 0x03}, {0x018b, 0x03}, {0x018c, 0x03},
+	};
+
+	for (i = 0; i < ARRAY_SIZE(hwm_init_table); ++i)
+		ec_write(1, hwm_init_table[i].addr, hwm_init_table[i].val);
+
+        pnp_enter_ext_func_mode_alt(port);
+        // Configure UART1 BAR
+	pnp_set_logical_device(port, SCH555x_LDN_LPCI);
+	pnp_write_config32(port, SCH555x_LPCI_UART1_BAR, CONFIG_SERIAL_PORT << 16 | 0x8707);
+	// Enable UART1
+	pnp_set_logical_device(port, SCH555x_LDN_UART1);
+	pnp_set_enable(port, 1);
+	pnp_write_register(port, 0x0f, 0x02);
+	pnp_exit_ext_func_mode(port);
+}
+
+static void chipset_init(void)
+{
+	southbridge_init();
+	superio_init(0x2e);
+}

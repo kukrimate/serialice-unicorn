@@ -89,6 +89,9 @@ config BOARD_ASUS_P5QC
 config BOARD_COMMELL_LV_672
 	bool "Commell LV-672"
 
+config BOARD_DELL_OPTIPLEX_9020
+	bool "Dell Optiplex 9020"
+
 config BOARD_DELL_S1850
 	bool "Dell PowerEdge S1850"
 
@@ -169,6 +172,7 @@ config BOARD_INIT
 	default "kontron_986lcd-m.c" if BOARD_KONTRON_986LCD_M
 	default "roda_rk886ex.c" if BOARD_RODA_RK886EX
 	default "intel_d94x.c" if BOARD_INTEL_D945GCLF || BOARD_INTEL_D945GNT || BOARD_INTEL_D946GZIS
+	default "dell_optiplex-9020.c" if BOARD_DELL_OPTIPLEX_9020
 	default "dell_s1850.c" if BOARD_DELL_S1850
 	default "asus_f2a85-m.c" if BOARD_ASUS_F2A85_M
 	default "asus_h110m-adp.c" if BOARD_ASUS_H110M_ADP
@@ -204,7 +208,7 @@ config BOARD_INIT
 
 config SOUTHBRIDGE_INIT
 	string
-	default "southbridge/intel-ich7.c" if BOARD_KONTRON_986LCD_M || BOARD_ASROCK_H81M_HDS
+	default "southbridge/intel-ich7.c" if BOARD_KONTRON_986LCD_M || BOARD_ASROCK_H81M_HDS || BOARD_DELL_OPTIPLEX_9020
 	default "southbridge/intel-sunrise.c" if BOARD_ASUS_H110M_ADP || BOARD_SUPERMICRO_X11SSM_F || BOARD_ACER_ES1_572
 	default "southbridge/amd-sbxxx.c" if BOARD_ASUS_F2A85_M || BOARD_JETWAY_NF81_T56N_LF
 	default "southbridge/amd-sbxxx.c" if BOARD_ASUS_P2_M3A3200
@@ -245,6 +249,9 @@ config ROM_4096K
 config ROM_8192K
 	boolean "8192 KB"
 
+config ROM_12288K
+	boolean "12288 KB"
+
 config ROM_16384K
 	boolean "16384 KB"
 
@@ -260,6 +267,7 @@ config ROMSIZE
 	default 0x200000 if ROM_2048K
 	default 0x400000 if ROM_4096K
 	default 0x800000 if ROM_8192K
+	default 0xc00000 if ROM_12288K
 	default 0x1000000 if ROM_16384K
 
 choice
