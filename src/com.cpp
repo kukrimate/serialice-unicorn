@@ -91,6 +91,7 @@ Target::Target(const char *device)
 
 	// Set baudrate
 	cfsetspeed(&options, B115200);
+	// cfsetspeed(&options, 921600);
 
 	m_handle.tcsetattr(TCSANOW, &options);
 

@@ -31,6 +31,13 @@ static void superio_init(u16 port)
 	pnp_set_logical_device(port, 2);
 	pnp_set_enable(port, 0);
 	pnp_set_iobase0(port, CONFIG_SERIAL_PORT);
+
+	/* Set UART clock source to 24 MHz */
+	// pnp_write_register(port, 0xf0, 2);
+	/* Set UART clock source to 14.769 MHz */
+	// pnp_write_register(port, 0xf0, 3);
+
 	pnp_set_enable(port, 1);
+
 	nuvoton_pnp_exit_conf_state(port);
 }
