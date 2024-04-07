@@ -17,6 +17,8 @@ BINARY_WRITE_IO32  = b"\x32"
 BINARY_RDMSR       = b"\x40"
 BINARY_WRMSR       = b"\x41"
 BINARY_CPUID       = b"\x42"
+BINARY_RDTSC       = b"\x43"
+BINARY_RDTSCP      = b"\x44"
 BINARY_NOP         = b"\xaa"
 BINARY_ACK         = b"\x55"
 BINARY_NAK         = b"\xbb"
@@ -54,63 +56,87 @@ class SerialICE:
 
     def read_mem(self, addr: int, size: int) -> int:
         if size == 1:
-            resp = self.bin_cmd(BINARY_READ_MEM8 + addr.to_bytes(4), 1)
+            resp = self.bin_cmd(BINARY_READ_MEM8 + addr.to_bytes(4, byteorder='little'), 1)
             return resp[0]
         elif size == 2:
-            resp = self.bin_cmd(BINARY_READ_MEM16 + addr.to_bytes(4), 2)
-            return int.from_bytes(resp[:2])
+            resp = self.bin_cmd(BINARY_READ_MEM16 + addr.to_bytes(4, byteorder='little'), 2)
+            return int.from_bytes(resp[:2], byteorder='little')
         elif size == 4:
-            resp = self.bin_cmd(BINARY_READ_MEM32 + addr.to_bytes(4), 4)
-            return int.from_bytes(resp[:4])
+            resp = self.bin_cmd(BINARY_READ_MEM32 + addr.to_bytes(4, byteorder='little'), 4)
+            return int.from_bytes(resp[:4], byteorder='little')
         elif size == 8:
-            resp = self.bin_cmd(BINARY_READ_MEM64 + addr.to_bytes(4), 8)
-            return int.from_bytes(resp[:8])
+            resp = self.bin_cmd(BINARY_READ_MEM64 + addr.to_bytes(4, byteorder='little'), 8)
+            return int.from_bytes(resp[:8], byteorder='little')
         else:
             raise Exception(f"Invalid size {size} for read_mem")
 
     def write_mem(self, addr: int, size: int, val: int) -> int:
         if size == 1:
-            self.bin_cmd(BINARY_WRITE_MEM8 + addr.to_bytes(4) + val.to_bytes(1), 0)
+            self.bin_cmd(BINARY_WRITE_MEM8 + addr.to_bytes(4, byteorder='little') \
+                                           + val.to_bytes(1, byteorder='little'), 0)
         elif size == 2:
-            self.bin_cmd(BINARY_WRITE_MEM16 + addr.to_bytes(4) + val.to_bytes(2), 0)
+            self.bin_cmd(BINARY_WRITE_MEM16 + addr.to_bytes(4, byteorder='little') \
+                                            + val.to_bytes(2, byteorder='little'), 0)
         elif size == 4:
-            self.bin_cmd(BINARY_WRITE_MEM32 + addr.to_bytes(4) + val.to_bytes(4), 0)
+            self.bin_cmd(BINARY_WRITE_MEM32 + addr.to_bytes(4, byteorder='little') \
+                                            + val.to_bytes(4, byteorder='little'), 0)
         elif size == 8:
-            self.bin_cmd(BINARY_WRITE_MEM64 + addr.to_bytes(4) + val.to_bytes(8), 0)
+            self.bin_cmd(BINARY_WRITE_MEM64 + addr.to_bytes(4, byteorder='little') \
+                                            + val.to_bytes(8, byteorder='little'), 0)
         else:
             raise Exception(f"Invalid size {size} for write_mem")
 
     def read_io(self, addr: int, size: int) -> int:
         if size == 1:
-            resp = self.bin_cmd(BINARY_READ_IO8 + addr.to_bytes(2), 1)
+            resp = self.bin_cmd(BINARY_READ_IO8 + addr.to_bytes(2, byteorder='little'), 1)
             return resp[0]
         elif size == 2:
-            resp = self.bin_cmd(BINARY_READ_IO16 + addr.to_bytes(2), 2)
-            return int.from_bytes(resp[:2])
+            resp = self.bin_cmd(BINARY_READ_IO16 + addr.to_bytes(2, byteorder='little'), 2)
+            return int.from_bytes(resp[:2], byteorder='little')
         elif size == 4:
-            resp = self.bin_cmd(BINARY_READ_IO32 + addr.to_bytes(2), 4)
-            return int.from_bytes(resp[:4])
+            resp = self.bin_cmd(BINARY_READ_IO32 + addr.to_bytes(2, byteorder='little'), 4)
+            return int.from_bytes(resp[:4], byteorder='little')
         else:
             raise Exception(f"Invalid size {size} for read_io")
 
     def write_io(self, addr: int, size: int, val: int) -> int:
         if size == 1:
-            self.bin_cmd(BINARY_WRITE_IO8 + addr.to_bytes(2) + val.to_bytes(1), 0)
+            self.bin_cmd(BINARY_WRITE_IO8 + addr.to_bytes(2, byteorder='little') \
+                                          + val.to_bytes(1, byteorder='little'), 0)
         elif size == 2:
-            self.bin_cmd(BINARY_WRITE_IO16 + addr.to_bytes(2) + val.to_bytes(2), 0)
+            self.bin_cmd(BINARY_WRITE_IO16 + addr.to_bytes(2, byteorder='little') \
+                                           + val.to_bytes(2, byteorder='little'), 0)
         elif size == 4:
-            self.bin_cmd(BINARY_WRITE_IO32 + addr.to_bytes(2) + val.to_bytes(4), 0)
+            self.bin_cmd(BINARY_WRITE_IO32 + addr.to_bytes(2, byteorder='little') \
+                                           + val.to_bytes(4, byteorder='little'), 0)
         else:
             raise Exception(f"Invalid size {size} for write_io")
 
     def rdmsr(self, ecx: int) -> (int, int):
-        resp = self.bin_cmd(BINARY_RDMSR + ecx.to_bytes(4), 8)
-        return int.from_bytes(resp[:4]), int.from_bytes(resp[4:])
+        resp = self.bin_cmd(BINARY_RDMSR + ecx.to_bytes(4, byteorder='little'), 8)
+        return int.from_bytes(resp[:4], byteorder='little'), \
+               int.from_bytes(resp[4:], byteorder='little')
 
     def wrmsr(self, ecx: int, eax: int, edx: int):
-        self.bin_cmd(BINARY_WRMSR + ecx.to_bytes(4) + eax.to_bytes(4) + edx.to_bytes(4), 8)
+        self.bin_cmd(BINARY_WRMSR + ecx.to_bytes(4, byteorder='little') \
+                                  + eax.to_bytes(4, byteorder='little') \
+                                  + edx.to_bytes(4, byteorder='little'), 0)
 
     def cpuid(self, eax: int, ecx: int) -> (int, int, int, int):
-        resp = self.bin_cmd(BINARY_CPUID + eax.to_bytes(4) + ecx.to_bytes(4), 16)
-        return int.from_bytes(resp[:4]), int.from_bytes(resp[4:8]), \
-               int.from_bytes(resp[8:12]), int.from_bytes(resp[12:])
+        resp = self.bin_cmd(BINARY_CPUID + eax.to_bytes(4, byteorder='little') \
+                                         + ecx.to_bytes(4, byteorder='little'), 16)
+        return int.from_bytes(resp[:4], byteorder='little'), \
+               int.from_bytes(resp[4:8], byteorder='little'), \
+               int.from_bytes(resp[8:12], byteorder='little'), \
+               int.from_bytes(resp[12:], byteorder='little')
+
+    def rdtsc(self) -> (int, int):
+        resp = self.bin_cmd(BINARY_RDTSC, 8)
+        return int.from_bytes(resp[:4], byteorder='little'), \
+               int.from_bytes(resp[4:], byteorder='little')
+
+    def rdtscp(self) -> (int, int, int):
+        resp = self.bin_cmd(BINARY_RDTSCP, 12)
+        return int.from_bytes(resp[:4], byteorder='little'), \
+               int.from_bytes(resp[4:8], byteorder='little'), \
+               int.from_bytes(resp[8:], byteorder='little')

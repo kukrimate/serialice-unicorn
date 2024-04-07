@@ -5,6 +5,8 @@
  */
 
 #include <getopt.h>
+#include <setjmp.h>
+#include <signal.h>
 
 #include <algorithm>
 #include <cstring>
@@ -61,8 +63,25 @@ static std::optional<uc_cpu_x86> str2uc_cpu_x86(const char *s)
 	return {};
 }
 
+static jmp_buf jbuf;
+
+static void segfault(int s)
+{
+	printf("SIGSEGV\n");
+	longjmp(jbuf, 1);
+}
+
+static void sigint(int s)
+{
+	printf("SIGINT\n");
+	longjmp(jbuf, 1);
+}
+
 int main(int argc, char **argv)
 {
+	signal(SIGSEGV, segfault);
+	signal(SIGINT, sigint);
+
 	static const struct option longopts[] = {
 		{ "cpu",      required_argument, 0, 'c' }, // CPU type
 		{ "firmware", required_argument, 0, 'f' }, // Firmware image
@@ -131,38 +150,25 @@ int main(int argc, char **argv)
 
 	// Map ROM into emulator
 	emulator.map_rom(rom.data(), 4ULL * GiB - rom.size(), rom.size());
-	auto low_map_size = std::min<size_t>(rom.size(), 128 * KiB);
-	emulator.map_rom(rom.data(), 1 * MiB - low_map_size, low_map_size);
+	// auto low_map_size = std::min<size_t>(rom.size(), 128 * KiB);
+	// emulator.map_rom(rom.data(), 1 * MiB - low_map_size, low_map_size);
+
+
+	int err = EXIT_SUCCESS;
 
 	// Run emulation
 	try {
-		emulator.start();
-	} catch (const std::exception &ex) {
-		fprintf(stderr, "Caught exception during emulation: %s\n", ex.what());
-		// Dump emulator state
-		uint16_t cs = emulator.read_register(CS);
-		uint32_t eip = emulator.read_register(EIP);
-		uint32_t eax = emulator.read_register(EAX);
-		uint32_t ebx = emulator.read_register(EBX);
-		uint32_t ecx = emulator.read_register(ECX);
-		uint32_t edx = emulator.read_register(EDX);
-		uint32_t esi = emulator.read_register(ESI);
-		uint32_t edi = emulator.read_register(EDI);
-		uint32_t ebp = emulator.read_register(EBP);
-		uint32_t esp = emulator.read_register(ESP);
-		fprintf(stderr,
-			"Registers at exit\n"
-			"  CS:EIP %04x:%08x\n"
-			"  EAX %08x EBX %08x ECX %08x EDX %08x\n"
-			"  ESI %08x EDI %08x EBP %08x ESP %08x\n"
-			"Stack at exit (ESP - 32 dwords)\n",
-			cs, eip, eax, ebx, ecx, edx, esi, edi, ebp, esp);
-		for (int i = 0; i < 32; ++i) {
-			uint32_t addr = esp - (32 - i) * 4;
-			fprintf(stderr, "  [%08x] = %08x\n", addr, emulator.read_mem(addr, 4));
+		if (setjmp(jbuf)) {
+			err = EXIT_FAILURE;
+		} else {
+			emulator.start();
 		}
-		return EXIT_FAILURE;
+	} catch (const std::exception &ex) {
+		printf("Caught exception during emulation: %s\n", ex.what());
+		err = EXIT_FAILURE;
 	}
 
-	return EXIT_SUCCESS;
+	emulator.dump_state();
+	fflush(stdout);
+	return err;
 }

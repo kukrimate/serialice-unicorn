@@ -225,6 +225,8 @@ static void serialice_version(void)
 #define BINARY_RDMSR       0x40
 #define BINARY_WRMSR       0x41
 #define BINARY_CPUID       0x42
+#define BINARY_RDTSC       0x43
+#define BINARY_RDTSCP      0x44
 
 #define BINARY_NOP         0xaa
 #define BINARY_EXIT        '~'
@@ -393,6 +395,19 @@ static void binary_main(void)
 			break;
 		case BINARY_CPUID:
 			binary_cpuid();
+			serial_write(BINARY_ACK);
+			break;
+		case BINARY_RDTSC:
+			__asm__("rdtsc" : "=a" (msr.lo), "=d" (msr.hi));
+			binary_write32(msr.lo);
+			binary_write32(msr.hi);
+			serial_write(BINARY_ACK);
+			break;
+		case BINARY_RDTSCP:
+			__asm__("rdtscp" : "=a" (msr.lo), "=d" (msr.hi), "=c" (tmp));
+			binary_write32(msr.lo);
+			binary_write32(msr.hi);
+			binary_write32(tmp);
 			serial_write(BINARY_ACK);
 			break;
 		case BINARY_NOP:

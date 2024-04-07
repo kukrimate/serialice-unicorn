@@ -52,9 +52,14 @@ private:
 
 	const char *m_path;
 	int m_fd;
+
+	FileHandle(const char *path, int fd);
+
 public:
-	FileHandle(const char *path, int flags);
 	~FileHandle();
+
+	static FileHandle create(const char *path, int flags);
+	static FileHandle open(const char *path, int flags);
 
 	size_t read(void *buf, size_t size);
 	size_t write(const void *buf, size_t size);

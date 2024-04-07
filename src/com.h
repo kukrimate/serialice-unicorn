@@ -39,4 +39,6 @@ public:
 	void rdmsr(uint32_t addr, uint32_t key, uint32_t * hi, uint32_t * lo);
 	void wrmsr(uint32_t addr, uint32_t key, uint32_t hi, uint32_t lo);
 	CpuidRegs cpuid(uint32_t eax, uint32_t ecx);
+	void rdtsc(uint32_t *eax, uint32_t *edx);
+	void rdtscp(uint32_t *eax, uint32_t *edx, uint32_t *ecx);
 };

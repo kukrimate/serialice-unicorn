@@ -32,6 +32,8 @@
 #define BINARY_RDMSR       0x40
 #define BINARY_WRMSR       0x41
 #define BINARY_CPUID       0x42
+#define BINARY_RDTSC       0x43
+#define BINARY_RDTSCP      0x44
 
 #define BINARY_NOP         0xaa
 #define BINARY_EXIT        '~'
@@ -66,7 +68,7 @@ void Target::serialice_write(const void *buf, size_t nbyte)
 }
 
 Target::Target(const char *device)
-	: m_handle(device, O_RDWR | O_NOCTTY | O_NONBLOCK)
+	: m_handle(FileHandle::open(device, O_RDWR | O_NOCTTY | O_NONBLOCK))
 {
 	m_handle.ioctl(TIOCEXCL);   // Exclusive mode
 	m_handle.fcntl(F_SETFL, 0); // Blocking I/O
@@ -322,4 +324,27 @@ CpuidRegs Target::cpuid(uint32_t eax, uint32_t ecx)
 		*reinterpret_cast<uint32_t*>(m_buffer+8),
 		*reinterpret_cast<uint32_t*>(m_buffer+12),
 	};
+}
+
+void Target::rdtsc(uint32_t *eax, uint32_t *edx)
+{
+	m_command[0] = BINARY_RDTSC;
+
+	serialice_command(std::string_view((char*)m_command, 1), 9);
+
+	// FIXME: endianness
+	*eax = *reinterpret_cast<uint32_t*>(m_buffer);
+	*edx = *reinterpret_cast<uint32_t*>(m_buffer+4);
+}
+
+void Target::rdtscp(uint32_t *eax, uint32_t *edx, uint32_t *ecx)
+{
+	m_command[0] = BINARY_RDTSCP;
+
+	serialice_command(std::string_view((char*)m_command, 1), 13);
+
+	// FIXME: endianness
+	*eax = *reinterpret_cast<uint32_t*>(m_buffer);
+	*edx = *reinterpret_cast<uint32_t*>(m_buffer+4);
+	*ecx = *reinterpret_cast<uint32_t*>(m_buffer+8);
 }

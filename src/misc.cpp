@@ -23,18 +23,31 @@ void throw_fmt(const char *fmt, ...)
 	throw std::runtime_error(s);
 }
 
-FileHandle::FileHandle(const char *path, int flags)
-{
-	m_path = path;
-	m_fd = open(path, flags);
-	if (m_fd < 0)
-		throw_fmt("Failed to open %s: %s", path, strerror(errno));
-}
+FileHandle::FileHandle(const char *path, int fd)
+	: m_path(path)
+	, m_fd(fd)
+{}
 
 FileHandle::~FileHandle()
 {
 	if (close(m_fd) < 0)
 		throw_fmt("Failed to close %s: %s", m_path, strerror(errno));
+}
+
+FileHandle FileHandle::create(const char *path, int flags)
+{
+	int fd = ::open(path, flags | O_CREAT | O_TRUNC, 0666);
+	if (fd < 0)
+		throw_fmt("Failed to create %s: %s", path, strerror(errno));
+	return { path, fd };
+}
+
+FileHandle FileHandle::open(const char *path, int flags)
+{
+	int fd = ::open(path, flags);
+	if (fd < 0)
+		throw_fmt("Failed to open %s: %s", path, strerror(errno));
+	return { path, fd };
 }
 
 size_t FileHandle::read(void *buf, size_t size)
@@ -93,7 +106,7 @@ void FileHandle::tcflush(int queue_selector)
 
 std::vector<char> read_file(const char *path)
 {
-	FileHandle file(path, O_RDONLY);
+	auto file = FileHandle::open(path, O_RDONLY);
 	size_t size = file.seek(0, SEEK_END);
 	file.seek(0, SEEK_SET);
 	std::vector<char> data(size);

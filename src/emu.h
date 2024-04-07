@@ -11,6 +11,8 @@
 #include <exception>
 #include <optional>
 
+#include "misc.h"
+
 class Target;
 class Filter;
 
@@ -27,6 +29,8 @@ private:
 	Target &m_target;
 	Filter &m_filter;
 
+	FileHandle m_serial_out;
+
 	// Captured exceptions inside a hook
 	std::exception_ptr m_rethrow_me {};
 
@@ -38,6 +42,8 @@ private:
 	static bool hook_rdmsr(uc_engine *uc, void *user_data);
 	static bool hook_wrmsr(uc_engine *uc, void *user_data);
 	static bool hook_cpuid(uc_engine *uc, void *user_data);
+	static bool hook_rdtsc(uc_engine *uc, void *user_data);
+	static bool hook_rdtscp(uc_engine *uc, void *user_data);
 
 	// C++ callbacks
 	uint32_t handle_io_read(uint32_t port, int size);
@@ -47,6 +53,8 @@ private:
 	bool handle_rdmsr();
 	bool handle_wrmsr();
 	bool handle_cpuid();
+	bool handle_rdtsc();
+	bool handle_rdtscp();
 
 public:
 	Emulator(int cpu_type, Target &target, Filter &filter);
@@ -62,4 +70,6 @@ public:
 	uint32_t read_mem(uint32_t addr, int size);
 
 	void start();
+
+	void dump_state();
 };

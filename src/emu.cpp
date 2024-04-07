@@ -119,6 +119,30 @@ bool Emulator::hook_cpuid(uc_engine *uc, void *user_data)
 }
 
 static void hook_code(uc_engine *uc, uint64_t address, uint32_t size, void *user_data) {}
+bool Emulator::hook_rdtsc(uc_engine *uc, void *user_data)
+{
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		return static_cast<Emulator *>(user_data)->handle_rdtsc();
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(static_cast<Emulator *>(user_data)->m_uc);
+		return true;
+	}
+}
+
+bool Emulator::hook_rdtscp(uc_engine *uc, void *user_data)
+{
+	auto emu = static_cast<Emulator *>(user_data);
+	try {
+		return static_cast<Emulator *>(user_data)->handle_rdtscp();
+	} catch (...) {
+		emu->m_rethrow_me = std::current_exception();
+		uc_emu_stop(static_cast<Emulator *>(user_data)->m_uc);
+		return true;
+	}
+}
+
 
 #define mask_data(val,bytes) (val & (((uint64_t)1<<(bytes*8))-1))
 
@@ -137,8 +161,16 @@ uint32_t Emulator::handle_io_read(uint32_t port, int size)
 	return value;
 }
 
+
+
 void Emulator::handle_io_write(uint32_t port, int size, uint32_t value)
 {
+	if (port == 0x3f8 && size == 1) {
+		unsigned char val = value;
+		m_serial_out.write(&val, 1);
+		return;
+	}
+
 	value = mask_data(value, size);
 	uint64_t v64 = value;
 	int mux = m_filter.io_write_pre(*this, &v64, port, size);
@@ -183,8 +215,7 @@ void Emulator::handle_mem_write(uint64_t addr, int size, uint64_t value)
 
 bool Emulator::handle_rdmsr()
 {
-	uint32_t addr;
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &addr));
+	uint32_t addr = read_register(Register::ECX);
 
 	int mux = m_filter.rdmsr_pre(*this, addr);
 
@@ -197,8 +228,8 @@ bool Emulator::handle_rdmsr()
 		m_filter.rdmsr_post(*this, &hi, &lo);
 
 		// Inject result into VM
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EDX, (void *) &hi));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EAX, (void *) &lo));
+		write_register(Register::EDX, hi);
+		write_register(Register::EAX, lo);
 
 		// Indicate we overrode RDMSR
 		return true;
@@ -211,10 +242,9 @@ bool Emulator::handle_rdmsr()
 
 bool Emulator::handle_wrmsr()
 {
-	uint32_t addr, hi, lo;
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &addr));
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EDX, (void *) &hi));
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EAX, (void *) &lo));
+	uint32_t addr = read_register(Register::ECX);
+	uint32_t hi = read_register(Register::EDX);
+	uint32_t lo = read_register(Register::EAX);
 
 	int mux = m_filter.wrmsr_pre(*this, addr, &hi, &lo);
 
@@ -231,9 +261,8 @@ bool Emulator::handle_wrmsr()
 
 bool Emulator::handle_cpuid()
 {
-	uint32_t eax, ecx;
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_EAX, (void *) &eax));
-	UC_DO(uc_reg_read(m_uc, UC_X86_REG_ECX, (void *) &ecx));
+	uint32_t eax = read_register(Register::EAX);
+	uint32_t ecx = read_register(Register::ECX);
 
 	int mux = m_filter.cpuid_pre(*this, eax, ecx);
 
@@ -245,10 +274,10 @@ bool Emulator::handle_cpuid()
 		m_filter.cpuid_post(*this, regs);
 
 		// Inject result into VM
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EAX, (void *) &regs.eax));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EBX, (void *) &regs.ebx));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_ECX, (void *) &regs.ecx));
-		UC_DO(uc_reg_write(m_uc, UC_X86_REG_EDX, (void *) &regs.edx));
+		write_register(Register::EAX, regs.eax);
+		write_register(Register::EBX, regs.ebx);
+		write_register(Register::ECX, regs.ecx);
+		write_register(Register::EDX, regs.edx);
 
 		// Indicate that we overrode CPUID
 		return true;
@@ -259,14 +288,37 @@ bool Emulator::handle_cpuid()
 	return !(mux & READ_FROM_QEMU);
 }
 
+bool Emulator::handle_rdtsc()
+{
+	uint32_t eax, edx;
+	// Get result from target
+	m_target.rdtsc(&eax, &edx);
+	// Inject result into VM
+	write_register(Register::EAX, eax);
+	write_register(Register::EDX, edx);
+	return true;
+}
+
+bool Emulator::handle_rdtscp()
+{
+	uint32_t eax, edx, ecx;
+	// Get result from target
+	m_target.rdtscp(&eax, &edx, &ecx);
+	// Inject result into VM
+	write_register(Register::EAX, eax);
+	write_register(Register::EDX, edx);
+	write_register(Register::ECX, ecx);
+	return true;
+}
 
 Emulator::Emulator(int cpu_type, Target &target, Filter &filter)
 	: m_target(target)
 	, m_filter(filter)
+	, m_serial_out(FileHandle::create("serial.log", O_RDWR))
 {
 	uc_hook hh;
 	// Create unicorn handle
-	UC_DO(uc_open(UC_ARCH_X86, UC_MODE_16, &m_uc));
+	UC_DO(uc_open(UC_ARCH_X86, UC_MODE_64, &m_uc));
 	// Set CPU type
 	UC_DO(uc_ctl(m_uc, UC_CTL_CPU_MODEL, static_cast<uc_cpu_x86>(cpu_type)));
 	// Install hooks
@@ -277,6 +329,8 @@ Emulator::Emulator(int cpu_type, Target &target, Filter &filter)
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_rdmsr), this, 0, 0xffffffff, UC_X86_INS_RDMSR));
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_wrmsr), this, 0, 0xffffffff, UC_X86_INS_WRMSR));
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_cpuid), this, 0, 0xffffffff, UC_X86_INS_CPUID));
+	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_rdtsc), this, 0, 0xffffffff, UC_X86_INS_RDTSC));
+	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_INSN, reinterpret_cast<void *>(hook_rdtscp), this, 0, 0xffffffff, UC_X86_INS_RDTSCP));
 	// We need to trace every instruction to accurately track the guest the instruction pointer.
 	// This shouldn't cause any real performance issues as serial communication is by far our biggest bottleneck.
 	UC_DO(uc_hook_add(m_uc, &hh, UC_HOOK_CODE, reinterpret_cast<void *>(hook_code), this, 0, 0xffffffff));
@@ -305,15 +359,15 @@ void Emulator::unmap(uint64_t addr, size_t size)
 static uc_x86_reg reg2uc(Register reg)
 {
 	switch (reg) {
-	case EAX: return UC_X86_REG_EAX;
-	case ECX: return UC_X86_REG_ECX;
-	case EDX: return UC_X86_REG_EDX;
-	case EBX: return UC_X86_REG_EBX;
-	case ESP: return UC_X86_REG_ESP;
-	case EBP: return UC_X86_REG_EBP;
-	case ESI: return UC_X86_REG_ESI;
-	case EDI: return UC_X86_REG_EDI;
-	case EIP: return UC_X86_REG_EIP;
+	case EAX: return UC_X86_REG_RAX;
+	case ECX: return UC_X86_REG_RCX;
+	case EDX: return UC_X86_REG_RDX;
+	case EBX: return UC_X86_REG_RBX;
+	case ESP: return UC_X86_REG_RSP;
+	case EBP: return UC_X86_REG_RBP;
+	case ESI: return UC_X86_REG_RSI;
+	case EDI: return UC_X86_REG_RDI;
+	case EIP: return UC_X86_REG_RIP;
 	case CS: return UC_X86_REG_CS;
 	default: abort();
 	}
@@ -321,14 +375,15 @@ static uc_x86_reg reg2uc(Register reg)
 
 uint32_t Emulator::read_register(Register reg)
 {
-	uint32_t val = 0;
+	uint64_t val = 0; /* NOTE u64 as we might be in long mode */
 	UC_DO(uc_reg_read(m_uc, reg2uc(reg), &val));
 	return val;
 }
 
 void Emulator::write_register(Register reg, uint32_t val)
 {
-	UC_DO(uc_reg_write(m_uc, reg2uc(reg), &val));
+	uint64_t v64 = val; /* NOTE u64 as we might be in long mode */
+	UC_DO(uc_reg_write(m_uc, reg2uc(reg), &v64));
 }
 
 uint32_t Emulator::read_mem(uint32_t addr, int size)
@@ -346,4 +401,32 @@ void Emulator::start()
 	UC_DO(uc_emu_start(m_uc, 0xfff0, 0, 0, 0));
 	if (m_rethrow_me)
 		std::rethrow_exception(m_rethrow_me);
+}
+
+void Emulator::dump_state()
+{
+	uint16_t cs = read_register(CS);
+	uint32_t eip = read_register(EIP);
+	uint32_t eax = read_register(EAX);
+	uint32_t ebx = read_register(EBX);
+	uint32_t ecx = read_register(ECX);
+	uint32_t edx = read_register(EDX);
+	uint32_t esi = read_register(ESI);
+	uint32_t edi = read_register(EDI);
+	uint32_t ebp = read_register(EBP);
+	uint32_t esp = read_register(ESP);
+	printf("Registers\n"
+		"  CS:EIP %04x:%08x\n"
+		"  EAX %08x EBX %08x ECX %08x EDX %08x\n"
+		"  ESI %08x EDI %08x EBP %08x ESP %08x\n"
+		"Stack (64 dwords starting at ESP)\n",
+		cs, eip, eax, ebx, ecx, edx, esi, edi, ebp, esp);
+	for (int i = 0; i < 64; ++i) {
+		uint32_t addr = esp + i * 4;
+		try {
+			printf("  [%08x] = %08x\n", addr, read_mem(addr, 4));
+		} catch (...) {
+			break;
+		}
+	}
 }
